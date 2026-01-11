@@ -52,16 +52,39 @@
       box-shadow: var(--shadow);
     }
 
-    /* 書影 */
-    .cover{
-      aspect-ratio: 3 / 4;
-      background:#f2f2f2;
+    /* 書影リンク枠 */
+    .coverlink{
+      position: relative;
       display:block;
-      width:100%;
-      object-fit: cover;
+      text-decoration:none;
+      color:inherit;
+      background:#f2f2f2;
     }
 
-    /* 画像が無い時の「見た目は棚」＋タイトル */
+    /* 書影（見切れゼロ：contain） */
+    .cover{
+      aspect-ratio: 3 / 4;
+      display:block;
+      width:100%;
+      object-fit: contain;
+      background:#f2f2f2;
+    }
+
+    /* 発売日：A案（下端帯・角から離す） */
+    .badge-date{
+      position:absolute;
+      left:6px; right:6px; bottom:6px;
+      font-size:10px;
+      line-height:1;
+      padding:6px 0;
+      text-align:center;
+      border-radius:999px;
+      background: rgba(0,0,0,.45);
+      color:#fff;
+      backdrop-filter: blur(2px);
+    }
+
+    /* 画像が無い時：NO IMAGE + タイトル + 発売日帯 */
     .fallback{
       aspect-ratio: 3 / 4;
       display:flex;
@@ -80,34 +103,38 @@
       font-size: 11px;
       letter-spacing: .08em;
       color: #7a7a7a;
-      font-weight: 800;
+      font-weight: 900;
       margin-bottom: 8px;
     }
     .fallbackTitle{
       font-size: 12px;
       line-height: 1.35;
-      font-weight: 800;
+      font-weight: 900;
       color: #111;
       display: -webkit-box;
-      -webkit-line-clamp: 4;      /* 最大4行で省略 */
+      -webkit-line-clamp: 4;
       -webkit-box-orient: vertical;
       overflow: hidden;
       word-break: break-word;
+      margin: 0;
     }
 
-    .btnwrap{ padding: 6px 6px 8px; }
-    .btn{
-      display:block;
-      text-align:center;
-      padding: 8px 0;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      font-size: 12px;
-      text-decoration:none;
-      color:#333;
-      background:#fff;
-      user-select:none;
+    /* タイトル（Amazonリンク）：2行固定で崩れない */
+    .twrap{ padding: 6px 8px 10px; }
+    .titleLink{
+      display: -webkit-box;
+      -webkit-line-clamp: 2;      /* 2行で打ち止め */
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      height: calc(1.35em * 2);   /* 2行分固定でカード高さを揃える */
+      font-size: 11px;
+      line-height: 1.35;
+      font-weight: 800;
+      color: #222;
+      text-decoration: none;
+      word-break: break-word;
     }
+    .titleLink:active{ opacity: .75; }
 
     .note{
       margin-top: 10px;
@@ -118,7 +145,7 @@
     @media (max-width: 390px){
       :root{ --gap: 8px; }
       .wrap{ padding: 8px 10px 10px; }
-      .btn{ font-size: 11px; }
+      .titleLink{ font-size: 10.5px; }
       .fallbackTitle{ font-size: 11px; }
     }
   </style>
@@ -148,34 +175,37 @@
     const title = escapeHtml(it.title);
     const cover = (it.cover || "").trim();
     const amazon = (it.amazon || "#").trim();
+    const pub = (it.pubdate || "").trim();
 
-    // 画像がある → 今まで通り
+    // 書影あり
     if (cover) {
       return `
         <div class="card">
-          <a href="${amazon}" target="_blank" rel="nofollow noopener">
+          <a class="coverlink" href="${amazon}" target="_blank" rel="nofollow noopener">
             <img class="cover" src="${cover}" alt="${title}">
+            ${pub ? `<div class="badge-date">${escapeHtml(pub)}発売</div>` : ``}
           </a>
-          <div class="btnwrap">
-            <a class="btn" href="${amazon}" target="_blank" rel="nofollow noopener">Amazon</a>
+          <div class="twrap">
+            <a class="titleLink" href="${amazon}" target="_blank" rel="nofollow noopener">${title}</a>
           </div>
         </div>
       `;
     }
 
-    // 画像が無い → タイトルを表示（クリックはAmazonへ）
+    // 書影なし
     return `
       <div class="card">
-        <a href="${amazon}" target="_blank" rel="nofollow noopener" style="text-decoration:none;color:inherit;">
+        <a class="coverlink" href="${amazon}" target="_blank" rel="nofollow noopener">
           <div class="fallback">
             <div class="fallbackInner">
               <div class="fallbackLabel">NO IMAGE</div>
-              <div class="fallbackTitle">${title}</div>
+              <p class="fallbackTitle">${title}</p>
             </div>
           </div>
+          ${pub ? `<div class="badge-date">${escapeHtml(pub)}発売</div>` : ``}
         </a>
-        <div class="btnwrap">
-          <a class="btn" href="${amazon}" target="_blank" rel="nofollow noopener">Amazon</a>
+        <div class="twrap">
+          <a class="titleLink" href="${amazon}" target="_blank" rel="nofollow noopener">${title}</a>
         </div>
       </div>
     `;
@@ -186,10 +216,8 @@
     const data = await res.json();
 
     const items = (data.items || []).slice(0, 8);
-
     grid.innerHTML = items.map(renderCard).join("");
 
-    // itemsが0でもページが「真っ白」に見えないように補助表示
     if (!items.length) {
       note.style.display = "block";
       note.textContent = "現在、新刊データが0件です（次回更新で復帰する可能性があります）。";
