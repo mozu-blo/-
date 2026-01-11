@@ -1,7 +1,7 @@
 // scripts/update-books.mjs
-// TRC新刊(zip内TSV/TXT) → ISBN抽出（列揺れ耐性）→ whitelist.json（レーベル一致）
-// → openBDでタイトル/書影 → cover欠損はNDL/OpenLibraryで補完
-// → data/books.json をロケットえんぴつ方式で更新（最大8枠維持）
+// 目的：TRC新刊TSV/TXT(zip) → ISBN抽出（列揺れ耐性）→ whitelist.json（レーベル一致）
+// → openBDでタイトル/発売日/書影取得 → 書影不足はNDL/OpenLibraryで補完
+// → data/books.json更新（ロケットえんぴつ方式）
 // ※items=0 の日は books.json を更新しない（真っ白回避）
 
 import fs from "node:fs/promises";
@@ -37,8 +37,7 @@ function normStr(s){
 }
 
 function normIsbn(s){
-  const t = normStr(s).replace(/[^0-9Xx]/g,"").toUpperCase();
-  return t;
+  return normStr(s).replace(/[^0-9Xx]/g,"").toUpperCase();
 }
 
 function isIsbn13Like(s){
@@ -90,17 +89,12 @@ async function fetchWithTimeout(url, opts = {}, ms = 4000){
   }
 }
 
-// 画像URLが実在するか確認して、OKならURLを返す
 async function probeImage(url){
   try{
-    // HEADが弾かれることがあるのでGET（軽量）
     const res = await fetchWithTimeout(url, { method: "GET" }, 5000);
     if(!res.ok) return null;
-
     const ct = (res.headers.get("content-type") || "").toLowerCase();
-    // 画像ならOK（ctが取れないケースもあるので甘め）
     if(ct && !ct.startsWith("image/")) return null;
-
     return url;
   } catch {
     return null;
@@ -265,6 +259,33 @@ function pickTitle(entry){
   return "";
 }
 
+function formatPubdateMin(raw){
+  if(!raw) return null;
+  const t = String(raw).trim();
+
+  if(/^\d{8}$/.test(t)){
+    return `${t.slice(0,4)}/${t.slice(4,6)}/${t.slice(6,8)}`;
+  }
+  const m = t.match(/^(\d{4})[\/\-\.年](\d{1,2})[\/\-\.月](\d{1,2})/);
+  if(m){
+    const y=m[1], mm=m[2].padStart(2,"0"), dd=m[3].padStart(2,"0");
+    return `${y}/${mm}/${dd}`;
+  }
+  const m2 = t.match(/^(\d{4})[\/\-\.年](\d{1,2})/);
+  if(m2){
+    const y=m2[1], mm=m2[2].padStart(2,"0");
+    return `${y}/${mm}`;
+  }
+  return (t.length <= 10) ? t : null;
+}
+
+function pickPubdate(entry){
+  const s = entry?.summary || {};
+  // openBDのsummary.pubdateを優先
+  const raw = s.pubdate ?? "";
+  return formatPubdateMin(raw);
+}
+
 function pick(entry, fallbackIsbn){
   if(!entry) return null;
 
@@ -272,6 +293,7 @@ function pick(entry, fallbackIsbn){
   const isbn = normIsbn(s.isbn || fallbackIsbn);
   const title = pickTitle(entry);
   const cover = pickCover(entry);
+  const pubdate = pickPubdate(entry);
 
   if(!isbn || !title) return null;
 
@@ -279,6 +301,7 @@ function pick(entry, fallbackIsbn){
     isbn,
     title,
     cover: cover ?? null,
+    pubdate: pubdate ?? null,
     amazon: amazonUrlFromIsbn(isbn),
   };
 }
@@ -296,21 +319,18 @@ async function openbdBatch(isbns){
 
 // ---------- cover fallback ----------
 async function fillMissingCovers(items){
-  // coverがnullのものだけ補完
   for(const it of items){
     if(it.cover) continue;
 
     const isbn13 = normIsbn(it.isbn);
     if(!/^97[89]\d{10}$/.test(isbn13)) continue;
 
-    // 1) NDL thumbnail（あれば最優先）
     const ndl = await probeImage(NDL_THUMB(isbn13));
     if(ndl){
       it.cover = ndl;
       continue;
     }
 
-    // 2) Open Library covers
     const ol = await probeImage(OL_THUMB(isbn13));
     if(ol){
       it.cover = ol;
@@ -326,12 +346,12 @@ async function loadExistingItems(){
     const raw = await fs.readFile(BOOKS_PATH, "utf-8");
     const json = JSON.parse(raw);
     const items = Array.isArray(json.items) ? json.items : [];
-    // 最低限の形だけ整える
     return items
       .map(x => ({
         isbn: normIsbn(x?.isbn),
         title: String(x?.title ?? ""),
         cover: x?.cover ?? null,
+        pubdate: x?.pubdate ?? null,
         amazon: x?.amazon ?? (x?.isbn ? amazonUrlFromIsbn(normIsbn(x.isbn)) : "#"),
       }))
       .filter(x => /^97[89]\d{10}$/.test(x.isbn) && x.title);
@@ -341,10 +361,8 @@ async function loadExistingItems(){
 }
 
 function mergeRocketPencil(newItems, oldItems, limit = 8){
-  // 先頭にnewItems、後ろにoldItems。ISBN重複は「先に出た方」を採用
   const seen = new Set();
   const merged = [];
-
   for(const it of [...newItems, ...oldItems]){
     const k = normIsbn(it?.isbn);
     if(!k || seen.has(k)) continue;
@@ -371,7 +389,6 @@ async function main(){
   const isbns = isbnsAll.slice(0, TAKE_ISBNS);
 
   if(isbns.length === 0){
-    // items=0日は更新しない（既存が無い場合だけ空を作る）
     if(!(await exists(BOOKS_PATH))){
       const out0 = { generated_at: new Date().toISOString(), source: zipUrl, items: [] };
       await fs.writeFile(BOOKS_PATH, JSON.stringify(out0, null, 2), "utf-8");
@@ -384,23 +401,21 @@ async function main(){
 
   const openbd = await openbdBatch(isbns);
 
-  // openBD結果から itemsToday を作る（まず多めに作って、最後に8にする）
   const itemsTodayAll = [];
   for(let i=0;i<openbd.length;i++){
     const b = pick(openbd[i], isbns[i]);
     if(b) itemsTodayAll.push(b);
   }
 
-  // 先に最大8だけに絞り、そこだけ書影補完（無駄なHTTPを減らす）
+  // 今日の候補を最大8に絞ってから書影補完（通信量節約）
   const itemsToday = await fillMissingCovers(itemsTodayAll.slice(0, 8));
 
   if(itemsToday.length === 0){
-    // openBD/補完後に0になった日も更新しない
     console.log("OK: 0 items after openBD -> keep existing books.json");
     return;
   }
 
-  // ロケットえんぴつ：既存と結合して常に最大8枠維持
+  // ロケットえんぴつ：既存と結合して最大8枠維持
   const existing = await loadExistingItems();
   const merged = mergeRocketPencil(itemsToday, existing, 8);
 
