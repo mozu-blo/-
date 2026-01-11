@@ -3,74 +3,98 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ラノベ新刊棚（テスト）</title>
+  <title>新刊棚</title>
   <style>
-    /* 余白極小で「棚」を1画面に寄せる */
-    html, body { margin: 0; padding: 0; background:#fff; }
+    /* ====== 埋め込み用・最小構成 ====== */
+    html, body { margin: 0; padding: 0; background: transparent; }
     body { font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
 
-    .wrap { padding: 10px 10px 12px; }
-    .bar { display:flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 0 0 8px; }
-    .bar h1 { font-size: 15px; margin: 0; font-weight: 900; }
-    .bar button {
-      font-size: 12px; border: 1px solid #e5e5e5; background:#fff; padding: 6px 10px;
-      border-radius: 999px; cursor: pointer;
+    .wrap { padding: 0; }
+
+    /* 見出し行（不要なら丸ごと削除OK） */
+    .bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 6px 10px 6px;
+    }
+    .label {
+      font-size: 14px;
+      font-weight: 900;
+      margin: 0;
+      line-height: 1.2;
+    }
+    .more {
+      font-size: 12px;
+      border: 1px solid #e5e5e5;
+      background: #fff;
+      padding: 6px 10px;
+      border-radius: 999px;
+      text-decoration: none;
+      line-height: 1;
+      white-space: nowrap;
     }
 
-    /* 棚：3列固定。段数は表示件数で決まる */
+    /* ====== 棚：3列×2段（6冊固定） ====== */
     .shelf {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 8px;
+      padding: 0 10px 10px;
     }
 
-    /* 表紙＋小さなボタンだけ */
-    .item { display:flex; flex-direction: column; gap: 6px; }
+    .item { display: flex; flex-direction: column; gap: 6px; }
+
+    /* 表紙 */
     .cover {
       border: 1px solid #eee;
       border-radius: 10px;
       overflow: hidden;
-      background:#f6f6f6;
-      aspect-ratio: 2 / 3; /* 縦長表紙 */
-      display:grid;
-      place-items:center;
+      background: #f3f3f3;
+      aspect-ratio: 2 / 3;
+      display: grid;
+      place-items: center;
     }
-    .cover img { width: 100%; height: 100%; object-fit: cover; display:block; }
+    .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
+    /* Amazonボタン（控えめ） */
     .btn {
-      display:block;
-      text-align:center;
-      font-size: 12px;
-      text-decoration:none;
+      display: block;
+      text-align: center;
+      font-size: 11px;
+      text-decoration: none;
       border: 1px solid #e5e5e5;
-      border-radius: 10px;
+      background: #fff;
+      border-radius: 999px;
       padding: 6px 0;
       line-height: 1;
     }
 
-    /* タイトルは棚では無し（必要なら後で1行だけ追加できる） */
-
-    /* iPhone SE級でも詰まりすぎないよう微調整 */
+    /* 小さい端末向け微調整 */
     @media (max-width: 360px) {
-      .wrap { padding: 8px; }
-      .shelf { gap: 6px; }
-      .btn { font-size: 11px; padding: 6px 0; }
-      .bar h1 { font-size: 14px; }
+      .bar { margin: 6px 8px 6px; }
+      .shelf { padding: 0 8px 10px; gap: 6px; }
+      .label { font-size: 13px; }
+      .more { font-size: 11px; padding: 6px 9px; }
+      .btn  { font-size: 10.5px; padding: 6px 0; }
+      .cover { border-radius: 9px; }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
+    <!-- 見出しが不要なら、この .bar ブロックごと削除してOK -->
     <div class="bar">
-      <h1>ラノベ新刊一覧（テスト中）</h1>
-      <button id="moreBtn" type="button">もっと見る</button>
+      <p class="label">ラノベ新刊一覧（テスト中）</p>
+      <a class="more" href="https://mozu.hateblo.jp/new-lightnovels" target="_blank" rel="noopener">もっと見る</a>
     </div>
 
     <div class="shelf" id="shelf"></div>
   </div>
 
 <script>
-  // ★あなたのAmazon追跡ID（例: "mozu-22"）に変更
+  // Amazon追跡ID（設定済み）
   const AMAZON_TAG = "mozublo-22";
 
   function amazonUrlFromIsbn(isbn) {
@@ -78,50 +102,28 @@
     return `https://www.amazon.co.jp/s?k=${q}&tag=${encodeURIComponent(AMAZON_TAG)}`;
   }
 
-  // ダミー（本番はopenBDで cover/title/author/date/isbn を埋める）
+  // ダミー（本番では openBD の cover に差し替え）
   const items = [
     { isbn:"9784040000001", cover:"https://placehold.co/600x900?text=1" },
     { isbn:"9784040000002", cover:"https://placehold.co/600x900?text=2" },
     { isbn:"9784040000003", cover:"https://placehold.co/600x900?text=3" },
     { isbn:"9784040000004", cover:"https://placehold.co/600x900?text=4" },
     { isbn:"9784040000005", cover:"https://placehold.co/600x900?text=5" },
-    { isbn:"9784040000006", cover:"https://placehold.co/600x900?text=6" },
-    { isbn:"9784040000007", cover:"https://placehold.co/600x900?text=7" },
-    { isbn:"9784040000008", cover:"https://placehold.co/600x900?text=8" },
-    { isbn:"9784040000009", cover:"https://placehold.co/600x900?text=9" },
-    { isbn:"9784040000010", cover:"https://placehold.co/600x900?text=10" },
+    { isbn:"9784040000006", cover:"https://placehold.co/600x900?text=6" }
   ];
 
   const shelf = document.getElementById("shelf");
-  const moreBtn = document.getElementById("moreBtn");
 
-  let expanded = false;
-
-  function render() {
-    shelf.innerHTML = "";
-    const visibleCount = expanded ? 9 : 6; // 2段(6冊)→最大3段(9冊)
-    const show = items.slice(0, visibleCount);
-
-    show.forEach(x => {
-      const aUrl = amazonUrlFromIsbn(x.isbn);
-      const el = document.createElement("div");
-      el.className = "item";
-      el.innerHTML = `
-        <div class="cover"><img src="${x.cover}" alt=""></div>
-        <a class="btn" href="${aUrl}" target="_blank" rel="nofollow noopener">Amazon</a>
-      `;
-      shelf.appendChild(el);
-    });
-
-    moreBtn.textContent = expanded ? "たたむ" : "もっと見る";
-  }
-
-  moreBtn.addEventListener("click", () => {
-    expanded = !expanded;
-    render();
+  items.forEach(x => {
+    const aUrl = amazonUrlFromIsbn(x.isbn);
+    const el = document.createElement("div");
+    el.className = "item";
+    el.innerHTML = `
+      <div class="cover"><img src="${x.cover}" alt=""></div>
+      <a class="btn" href="${aUrl}" target="_blank" rel="nofollow noopener">Amazon</a>
+    `;
+    shelf.appendChild(el);
   });
-
-  render();
 </script>
 </body>
 </html>
