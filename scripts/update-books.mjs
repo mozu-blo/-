@@ -1,12 +1,7 @@
 // scripts/update-books.mjs
-// 目的：TRC新刊(zip) → (ISBN→レーベル)抽出 → whitelist(レーベルのみ)でフィルタ → openBDで書影/タイトル取得 → data/books.json更新（ロケットえんぴつ）
-//
-// 重要仕様：
-// - whitelist は data/whitelist.json だけを見る（レーベルのみ照合）
-// - レーベルが取れない行は捨てる（label_only）
-// - cover が null でも捨てない（フロントでNO IMAGE）
-// - 0件の日は books.json を更新しない（棚を真っ白にしない）
-// - 取れた分だけ先頭に追加して8件に丸める（ロケットえんぴつ）
+// 目的：TRC新刊TSV/TXT(zip) → ISBN抽出（列揺れ耐性）→ whitelist.json（レーベル一致）
+// → openBDで書影/タイトル取得 → data/books.json更新（ロケットえんぴつ方式）
+// ※items=0 の日は books.json を更新しない（表示が真っ白にならない）
 
 import fs from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -18,31 +13,41 @@ const TRC_PAGE = "https://www.trc.co.jp/trc_opendata/";
 const OPENBD = "https://api.openbd.jp/v1/get?isbn=";
 const AMAZON_TAG = "mozublo-22";
 
+// 取りに行く候補数（多めに取って whitelist で絞る）
+const TAKE_ISBNS = 1200;
+// openBDは一括に限界があるので分割（安全側）
+const OPENBD_CHUNK = 100;
+
+// whitelist
 const WHITELIST_PATH = "data/whitelist.json";
-const BOOKS_PATH = "data/books.json";
 
-const MAX_KEEP = 8;
-const TAKE = 1200; // 多めに読む（8埋め安定化）
-
+// ---------- utils ----------
 function uniq(arr){ return [...new Set(arr)]; }
-function normIsbn(s){ return String(s||"").replace(/[^0-9Xx]/g,"").toUpperCase(); }
+
+function normStr(s){
+  return String(s ?? "").normalize("NFKC").trim();
+}
+
+function normIsbn(s){
+  // 978/979 + 10桁 or 13桁、ハイフン等を除去
+  const t = normStr(s).replace(/[^0-9Xx]/g,"").toUpperCase();
+  // ISBN10も来たら13に変換…はしない（TRCは基本ISBN13）
+  return t;
+}
+
+function isIsbn13Like(s){
+  const t = normIsbn(s);
+  return /^97[89]\d{10}$/.test(t);
+}
+
+function extractIsbnFromTextLine(line){
+  // 行全体から ISBN13 を拾う（列推定できないときの保険）
+  const m = normStr(line).match(/97[89]\d{10}/);
+  return m ? m[0] : "";
+}
 
 function amazonUrlFromIsbn(isbn){
   return `https://www.amazon.co.jp/s?k=${encodeURIComponent(isbn)}&tag=${encodeURIComponent(AMAZON_TAG)}`;
-}
-
-// 表記揺れ吸収（照合用）
-function normKey(s){
-  return String(s ?? "")
-    .toLowerCase()
-    .replace(/[　\s]/g, "")
-    .replace(/[！!]/g, "!")
-    .replace(/[：:]/g, ":")
-    .replace(/[・･]/g, "")
-    .replace(/[’'"]/g, "")
-    .replace(/[（）()\[\]【】「」『』]/g, "")
-    .replace(/[‐-–—―ー\-]/g, "-")
-    .replace(/[,，.。]/g, "");
 }
 
 async function fetchText(url){
@@ -64,17 +69,20 @@ async function fetchBinToFile(url, filepath){
   await fs.writeFile(filepath, buf);
 }
 
+// ---------- TRC ----------
 async function findLatestTrcZipUrl(){
   const html = await fetchText(TRC_PAGE);
+  // TRCページは新しいのが上の想定：最初の .zip を採用
   const m = html.match(/href="([^"]+\.zip)"/i);
   if(!m) throw new Error("TRC zip link not found");
   return new URL(m[1], TRC_PAGE).toString();
 }
 
-async function unzipPickTextLike(zipPath){
+async function unzipPickTextFile(zipPath){
   const { stdout: list } = await execFileAsync("unzip", ["-Z1", zipPath]);
   const names = list.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 
+  // TSV/TXT を優先して拾う（TRCは .txt のことがある）
   const pick =
     names.find(n => n.toLowerCase().endsWith(".tsv")) ||
     names.find(n => n.toLowerCase().endsWith(".txt")) ||
@@ -82,262 +90,241 @@ async function unzipPickTextLike(zipPath){
 
   if(!pick) throw new Error("No file in zip");
 
-  const { stdout } = await execFileAsync("unzip", ["-p", zipPath, pick], { maxBuffer: 80 * 1024 * 1024 });
   console.log("ZIP CONTENTS picked:", pick);
-  return { name: pick, text: stdout };
+
+  const { stdout } = await execFileAsync("unzip", ["-p", zipPath, pick], {
+    // 大きめに（TRCはそこそこサイズある）
+    maxBuffer: 50 * 1024 * 1024,
+  });
+  return stdout;
 }
 
-async function readWhitelist(){
-  const raw = await fs.readFile(WHITELIST_PATH, "utf-8");
-  const json = JSON.parse(raw);
-  const list = Array.isArray(json.label_includes_any) ? json.label_includes_any : [];
-  const normed = list.map(normKey).filter(Boolean);
-  return { raw: list, normed };
-}
-
-function passesLabelOnly(wh, labelText){
-  const hay = normKey(labelText);
-  if(!hay) return false;
-  return wh.normed.some(k => k && hay.includes(k));
-}
-
-async function readExistingBooks(){
+// ---------- whitelist ----------
+async function loadWhitelistLabels(){
   try{
-    const raw = await fs.readFile(BOOKS_PATH, "utf-8");
+    const raw = await fs.readFile(WHITELIST_PATH, "utf-8");
     const json = JSON.parse(raw);
-    return Array.isArray(json.items) ? json.items : [];
+    const labels = (json.label_includes_any || []).map(x => normStr(x)).filter(Boolean);
+    return uniq(labels);
   }catch{
     return [];
   }
 }
 
-function rocketPencilMerge(newItems, oldItems){
-  const seen = new Set();
-  const merged = [];
-  for(const it of [...newItems, ...oldItems]){
-    const isbn = normIsbn(it?.isbn);
-    if(!isbn || seen.has(isbn)) continue;
-    seen.add(isbn);
-    merged.push({ ...it, isbn });
-    if(merged.length >= MAX_KEEP) break;
+function lineHasAnyLabel(line, labels){
+  if(labels.length === 0) return false;
+  const t = normStr(line);
+  return labels.some(lb => lb && t.includes(lb));
+}
+
+function cellHasAnyLabel(cell, labels){
+  if(labels.length === 0) return false;
+  const t = normStr(cell);
+  return labels.some(lb => lb && t.includes(lb));
+}
+
+// ---------- parsing / inference ----------
+function splitLines(text){
+  return String(text ?? "").split(/\r?\n/).map(s => s.replace(/\u0000/g,"")).filter(s => s.trim().length > 0);
+}
+
+function detectDelimiter(line){
+  const tab = (line.match(/\t/g) || []).length;
+  const comma = (line.match(/,/g) || []).length;
+  return tab >= comma ? "\t" : ",";
+}
+
+function parseTable(lines){
+  if(lines.length === 0) return { header: [], rows: [], delim: "\t" };
+
+  const delim = detectDelimiter(lines[0]);
+  const rows = lines.map(l => l.split(delim));
+  const maxCols = Math.max(...rows.map(r => r.length));
+
+  // 全行を同じ列数にそろえる
+  const normRows = rows.map(r => {
+    if(r.length === maxCols) return r;
+    return [...r, ...Array(maxCols - r.length).fill("")];
+  });
+
+  return { header: normRows[0], rows: normRows.slice(1), delim };
+}
+
+function inferIsbnColumn(header, rows){
+  // 1) ヘッダ名に ISBN が含まれていれば最優先
+  const h = header.map(x => normStr(x));
+  let idx = h.findIndex(x => x.toLowerCase().includes("isbn"));
+  if(idx !== -1) return idx;
+
+  // 2) 実データで ISBN13っぽい値が多い列を採用
+  const sample = rows.slice(0, 200);
+  if(sample.length === 0) return -1;
+
+  const cols = header.length;
+  const counts = Array(cols).fill(0);
+
+  for(const r of sample){
+    for(let c=0;c<cols;c++){
+      if(isIsbn13Like(r[c])) counts[c] += 1;
+    }
   }
-  return merged;
+
+  let best = -1;
+  let bestCount = 0;
+  for(let c=0;c<cols;c++){
+    if(counts[c] > bestCount){
+      bestCount = counts[c];
+      best = c;
+    }
+  }
+
+  // 3件以上一致がないなら「列推定できない」
+  if(bestCount < 3) return -1;
+  return best;
 }
 
-// openBD
-async function openbdBatch(isbns){
-  const url = OPENBD + encodeURIComponent(isbns.join(","));
-  return await fetchJson(url);
+function extractIsbnsFromTrcText(text, labels){
+  const lines = splitLines(text);
+  if(lines.length === 0) return [];
+
+  const { header, rows } = parseTable(lines);
+
+  const isbnCol = inferIsbnColumn(header, rows);
+  if(isbnCol === -1) console.log("WARN: ISBN column not inferred");
+
+  const isbns = [];
+
+  for(const r of rows){
+    // label_only：行のどこかにホワイトリストのレーベル文字列が含まれること
+    const joined = r.join("\t");
+    if(!lineHasAnyLabel(joined, labels)) continue;
+
+    let isbn = "";
+    if(isbnCol !== -1){
+      isbn = normIsbn(r[isbnCol]);
+      if(!/^97[89]\d{10}$/.test(isbn)) isbn = "";
+    }
+    if(!isbn){
+      isbn = extractIsbnFromTextLine(joined);
+    }
+    if(isbn) isbns.push(isbn);
+  }
+
+  return uniq(isbns);
 }
 
-function pickFromOpenbd(entry, fallbackIsbn){
-  const isbn = normIsbn(entry?.summary?.isbn || fallbackIsbn);
-  const title = entry?.summary?.title || "";
-  const cover = entry?.summary?.cover || ""; // null→""（フロントでNO IMAGE）
+// ---------- openBD ----------
+function pickCover(entry){
+  // openBDは summary.cover が null のことがあるので保険を複数
+  const s = entry?.summary || {};
+  if(s.cover) return s.cover;
+
+  // hanmoto
+  if(entry?.hanmoto?.cover) return entry.hanmoto.cover;
+
+  // onix（存在する場合）
+  const link =
+    entry?.onix?.CollateralDetail?.SupportResource?.[0]?.ResourceVersion?.[0]?.ResourceLink;
+  if(link) return link;
+
+  return null;
+}
+
+function pickTitle(entry){
+  const s = entry?.summary || {};
+  if(s.title) return s.title;
+
+  // onix title fallback
+  const t =
+    entry?.onix?.DescriptiveDetail?.TitleDetail?.[0]?.TitleElement?.[0]?.TitleText?.content;
+  if(t) return t;
+
+  return "";
+}
+
+function pick(entry, fallbackIsbn){
+  if(!entry) return null;
+
+  const s = entry.summary || {};
+  const isbn = normIsbn(s.isbn || fallbackIsbn);
+  const title = pickTitle(entry);
+  const cover = pickCover(entry);
+
   if(!isbn || !title) return null;
-  return { isbn, title, cover, amazon: amazonUrlFromIsbn(isbn) };
+
+  return {
+    isbn,
+    title,
+    cover: cover ?? null,
+    amazon: amazonUrlFromIsbn(isbn),
+  };
 }
 
-// ---------- TRC解析：ISBN→label を作る（レーベルonly） ----------
-
-// まず “タブ区切りっぽいか” を判定
-function detectDelimiter(lines){
-  const sample = lines.slice(0, 30).join("\n");
-  if(sample.includes("\t")) return "\t";
-  // まれにカンマ区切りっぽいのが来たら一応対応
-  if(sample.includes(",")) return ",";
-  return null; // 区切れない＝列推定が難しい
+async function openbdBatch(isbns){
+  // chunked
+  const out = [];
+  for(let i=0;i<isbns.length;i+=OPENBD_CHUNK){
+    const chunk = isbns.slice(i, i+OPENBD_CHUNK);
+    const url = OPENBD + encodeURIComponent(chunk.join(","));
+    const res = await fetchJson(url);
+    out.push(...res);
+  }
+  return out;
 }
 
-// ヘッダがあるっぽいかを雑に判定
-function looksLikeHeader(line){
-  const s = String(line || "");
-  return /isbn/i.test(s) || /書名|タイトル|レーベル|叢書|シリーズ|出版者|出版社/.test(s);
-}
-
-function splitCols(line, delim){
-  if(!delim) return [String(line || "")];
-  return String(line || "").split(delim);
-}
-
-// ヘッダから “label列” を探す（日本語/英字ゆれも少し吸収）
-function findLabelIndexFromHeader(headerCols){
-  const keys = [
-    /レーベル/i,
-    /label/i,
-    /叢書/i,
-    /シリーズ/i,
-    /シリーズ名/i,
-    /叢書名/i,
-    /シリーズ.*レーベル/i,
-  ];
-  for(let i=0;i<headerCols.length;i++){
-    const h = String(headerCols[i] || "");
-    if(keys.some(r => r.test(h))) return i;
-  }
-  return -1;
-}
-
-// データ行から ISBN列 を推定（97[89]13桁が入ってる列）
-function inferIsbnIndex(lines, delim){
-  const scores = new Map(); // idx -> count
-  const N = Math.min(lines.length, 200);
-  for(let i=0;i<N;i++){
-    const cols = splitCols(lines[i], delim);
-    for(let c=0;c<cols.length;c++){
-      const m = String(cols[c] || "").match(/\b(97[89]\d{10})\b/);
-      if(m){
-        scores.set(c, (scores.get(c) || 0) + 1);
-      }
-    }
-  }
-  let best = -1, bestScore = 0;
-  for(const [idx, sc] of scores.entries()){
-    if(sc > bestScore){
-      bestScore = sc;
-      best = idx;
-    }
-  }
-  return best;
-}
-
-// データ行から label列 を推定：whitelistワードが一番多くヒットする列
-function inferLabelIndex(lines, delim, whitelistNormed, isbnIdx){
-  const hit = new Map(); // idx -> hits
-  const N = Math.min(lines.length, 400);
-  for(let i=0;i<N;i++){
-    const cols = splitCols(lines[i], delim);
-    for(let c=0;c<cols.length;c++){
-      if(c === isbnIdx) continue;
-      const cell = normKey(cols[c] || "");
-      if(!cell) continue;
-      // whitelistのどれかを含むか（重いので “どれか1つでも” で1点）
-      if(whitelistNormed.some(k => k && cell.includes(k))){
-        hit.set(c, (hit.get(c) || 0) + 1);
-      }
-    }
-  }
-  let best = -1, bestScore = 0;
-  for(const [idx, sc] of hit.entries()){
-    if(sc > bestScore){
-      bestScore = sc;
-      best = idx;
-    }
-  }
-  return best;
-}
-
-function buildIsbnToLabel(text, whitelist){
-  const linesAll = String(text || "").split(/\r?\n/).map(s => s.trimEnd());
-  const lines = linesAll.filter(l => l && l.length > 0);
-
-  if(lines.length === 0) return new Map();
-
-  const delim = detectDelimiter(lines);
-  if(!delim){
-    // 区切れない場合：label_onlyにできないので空にする（既存を壊さない設計で回避）
-    console.log("WARN: delimiter not detected -> cannot label_only");
-    return new Map();
-  }
-
-  let start = 0;
-  let headerCols = null;
-
-  if(looksLikeHeader(lines[0])){
-    headerCols = splitCols(lines[0], delim);
-    start = 1;
-  }
-
-  const dataLines = lines.slice(start);
-
-  const isbnIdx = inferIsbnIndex(dataLines, delim);
-  if(isbnIdx === -1){
-    console.log("WARN: ISBN column not inferred");
-    return new Map();
-  }
-
-  let labelIdx = -1;
-  if(headerCols){
-    labelIdx = findLabelIndexFromHeader(headerCols);
-  }
-  if(labelIdx === -1){
-    labelIdx = inferLabelIndex(dataLines, delim, whitelist.normed, isbnIdx);
-  }
-
-  if(labelIdx === -1){
-    console.log("WARN: Label column not inferred");
-    return new Map();
-  }
-
-  console.log("TRC inferred columns:", { isbnIdx, labelIdx, delim: delim === "\t" ? "TAB" : delim });
-
-  const map = new Map(); // isbn -> labelText
-  for(const line of dataLines){
-    const cols = splitCols(line, delim);
-    const isbn = normIsbn(cols[isbnIdx] || "");
-    const label = String(cols[labelIdx] || "").trim();
-
-    if(!isbn || isbn.length < 10) continue;
-    if(!label) continue;                 // label_only：ラベル無しは捨てる
-    if(!passesLabelOnly(whitelist, label)) continue;
-
-    if(!map.has(isbn)) map.set(isbn, label);
-    if(map.size >= TAKE) break;
-  }
-
-  return map;
-}
-
+// ---------- main ----------
 async function main(){
   await fs.mkdir("data", { recursive: true });
 
-  const whitelist = await readWhitelist();
+  const labels = await loadWhitelistLabels();
 
   const zipUrl = await findLatestTrcZipUrl();
   const tmpZip = "data/_trc_latest.zip";
+
   await fetchBinToFile(zipUrl, tmpZip);
 
-  const { text } = await unzipPickTextLike(tmpZip);
+  const trcText = await unzipPickTextFile(tmpZip);
 
-  // ISBN→label（レーベルonlyでここで絞る）
-  const isbnToLabel = buildIsbnToLabel(text, whitelist);
-  const isbns = Array.from(isbnToLabel.keys()).slice(0, TAKE);
+  const isbnsAll = extractIsbnsFromTrcText(trcText, labels);
+  const isbns = isbnsAll.slice(0, TAKE_ISBNS);
 
   if(isbns.length === 0){
-    console.log("OK: 0 items (no label-matched isbns) -> keep existing books.json");
-    return; // 0日は更新しない
+    // ロケットえんぴつ方式：0件なら既存を維持（なければ空を作る）
+    const exists = await fs.access("data/books.json").then(()=>true).catch(()=>false);
+    if(!exists){
+      const out0 = { generated_at: new Date().toISOString(), source: zipUrl, items: [] };
+      await fs.writeFile("data/books.json", JSON.stringify(out0, null, 2), "utf-8");
+      console.log("OK: 0 items (books.json created empty because it did not exist)");
+    }else{
+      console.log("OK: 0 items (no label-matched isbns) -> keep existing books.json");
+    }
+    return;
   }
 
   const openbd = await openbdBatch(isbns);
 
-  const newItems = [];
+  const items = [];
   for(let i=0;i<openbd.length;i++){
-    const b = pickFromOpenbd(openbd[i], isbns[i]);
-    if(!b) continue;
-
-    // label_onlyなので、TRC側で通ったISBNだけがここに来てる（念のため存在チェック）
-    if(!isbnToLabel.has(b.isbn)) continue;
-
-    newItems.push(b);
-    if(newItems.length >= MAX_KEEP) break;
+    const b = pick(openbd[i], isbns[i]);
+    if(b) items.push(b);
   }
 
-  if(newItems.length === 0){
-    console.log("OK: 0 items (openBD had no usable entries) -> keep existing books.json");
-    return; // 0日は更新しない
-  }
-
-  const oldItems = await readExistingBooks();
-  const merged = rocketPencilMerge(newItems, oldItems);
-
+  // 8件以上取れない日があっても、ここでは “取れたぶんだけ” 返す
+  // 表示側で “埋め” はしない（表示の正しさ優先）
   const out = {
     generated_at: new Date().toISOString(),
     source: zipUrl,
-    items: merged
+    items: items.slice(0, 8),
   };
 
-  await fs.writeFile(BOOKS_PATH, JSON.stringify(out, null, 2), "utf-8");
-  console.log("OK:", merged.length, "items");
+  if(out.items.length === 0){
+    // 0なら更新しない（ロケットえんぴつ）
+    console.log("OK: 0 items after openBD -> keep existing books.json");
+    return;
+  }
+
+  await fs.writeFile("data/books.json", JSON.stringify(out, null, 2), "utf-8");
+  console.log("OK:", out.items.length, "items");
 }
 
 main().catch(e => {
