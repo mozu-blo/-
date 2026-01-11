@@ -1,54 +1,35 @@
 {
-  "generated_at": "2026-01-11T09:13:26.993Z",
+  "generated_at": "2026-01-11T09:33:40.016Z",
   "source": "https://www.trc.co.jp/trc_opendata/data/TRCOpenBibData_20260110.zip",
+  "mode": "label_only",
   "items": [
     {
-      "isbn": "9784000229852",
-      "title": "国際法で世界がわかる 新版 : ニュースを読み解く33講",
+      "isbn": "9784065416990",
+      "title": "油断できない彼女",
       "cover": null,
-      "amazon": "https://www.amazon.co.jp/s?k=9784000229852&tag=mozublo-22"
+      "amazon": "https://www.amazon.co.jp/s?k=9784065416990&tag=mozublo-22",
+      "label": "講談社ラノベ文庫"
     },
     {
-      "isbn": "9784000237505",
-      "title": "即興がつなぐ未来 音楽と社会の狭間でおっとっと",
+      "isbn": "9784086316293",
+      "title": "学校一の美少女と親友同士の恋愛相談に乗っていたら、いつのまにか彼女が誰よりも近い存在になってた件 4",
       "cover": null,
-      "amazon": "https://www.amazon.co.jp/s?k=9784000237505&tag=mozublo-22"
+      "amazon": "https://www.amazon.co.jp/s?k=9784086316293&tag=mozublo-22",
+      "label": "ダッシュエックス文庫"
     },
     {
-      "isbn": "9784000245616",
-      "title": "百武三郎日記 侍従長が見た昭和天皇と戦争 : 昭和17年1月～19年9月／関連資料・索引",
+      "isbn": "9784086316323",
+      "title": "ヒモになりたい俺は、ヤンデレに飼われることにした 2",
       "cover": null,
-      "amazon": "https://www.amazon.co.jp/s?k=9784000245616&tag=mozublo-22"
+      "amazon": "https://www.amazon.co.jp/s?k=9784086316323&tag=mozublo-22",
+      "label": "ダッシュエックス文庫"
     },
     {
-      "isbn": "9784000272100",
-      "title": "神さまや鬼とのふしぎな話",
+      "isbn": "9784086316330",
+      "title": "俺とアイツは友達じゃない。 2",
       "cover": null,
-      "amazon": "https://www.amazon.co.jp/s?k=9784000272100&tag=mozublo-22"
-    },
-    {
-      "isbn": "9784004320913",
-      "title": "明治維新10講",
-      "cover": null,
-      "amazon": "https://www.amazon.co.jp/s?k=9784004320913&tag=mozublo-22"
-    },
-    {
-      "isbn": "9784004320920",
-      "title": "自治体は何のためにあるのか : 〈地域活性化〉を問い直す",
-      "cover": null,
-      "amazon": "https://www.amazon.co.jp/s?k=9784004320920&tag=mozublo-22"
-    },
-    {
-      "isbn": "9784004320937",
-      "title": "中高年シングル女性 : ひとりで暮らすわたしたちのこと",
-      "cover": null,
-      "amazon": "https://www.amazon.co.jp/s?k=9784004320937&tag=mozublo-22"
-    },
-    {
-      "isbn": "9784004320944",
-      "title": "多様性とどう向き合うか : 違和感から考える",
-      "cover": null,
-      "amazon": "https://www.amazon.co.jp/s?k=9784004320944&tag=mozublo-22"
+      "amazon": "https://www.amazon.co.jp/s?k=9784086316330&tag=mozublo-22",
+      "label": "ダッシュエックス文庫"
     }
   ]
 }
