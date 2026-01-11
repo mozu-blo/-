@@ -3,22 +3,29 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ラノベ新刊棚</title>
+  <title>ラノベ新刊一覧</title>
+
   <style>
     :root{
       --gap: 10px;
       --radius: 14px;
-      --border: #e9e9ee;
+      --border: #e9e9e9;
       --text: #111;
       --muted: #666;
       --bg: #fff;
+
+      --card-bg: #fff;
+      --ph-bg: #f3f3f3;
+      --ph-line: #e7e7e7;
     }
+
     body{
       margin:0;
       background:var(--bg);
       color:var(--text);
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
     }
+
     .wrap{ padding: 10px 12px 12px; }
 
     .topbar{
@@ -30,7 +37,7 @@
     }
     .h{
       font-size: 18px;
-      font-weight: 800;
+      font-weight: 900;
       margin: 0;
       letter-spacing: .02em;
     }
@@ -46,100 +53,137 @@
       border: 1px solid var(--border);
       border-radius: var(--radius);
       overflow:hidden;
-      background:#fff;
+      background: var(--card-bg);
       box-shadow: 0 1px 0 rgba(0,0,0,.02);
     }
 
-    /* 書影（縦長） */
-    .cover{
+    .coverWrap{
+      position: relative;
+      width: 100%;
       aspect-ratio: 3 / 4;
-      display:block;
-      width:100%;
-      object-fit: cover;
-      background: #f2f2f2;
+      background: var(--ph-bg);
+      border-bottom: 1px solid var(--ph-line);
     }
 
-    /* 下のAmazonボタン（棚っぽく薄め） */
+    /* 実画像 */
+    img.cover{
+      width:100%;
+      height:100%;
+      object-fit: cover;
+      display:block;
+      background: var(--ph-bg);
+    }
+
+    /* ここがポイント：NO IMAGEは画像ではなく“中央固定のレイアウト” */
+    .noimg{
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      color:#7a7a7a;
+      user-select:none;
+      padding: 10px;
+      background:
+        linear-gradient(135deg, rgba(0,0,0,.04) 25%, transparent 25%) 0 0/18px 18px,
+        linear-gradient(225deg, rgba(0,0,0,.04) 25%, transparent 25%) 0 0/18px 18px,
+        linear-gradient(315deg, rgba(0,0,0,.04) 25%, transparent 25%) 0 0/18px 18px,
+        linear-gradient(45deg, rgba(0,0,0,.04) 25%, transparent 25%) 0 0/18px 18px,
+        var(--ph-bg);
+    }
+    .noimgBox{
+      width: 100%;
+      max-width: 120px;           /* 小さすぎる画面でも収まる */
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      gap: 8px;
+      opacity:.95;
+    }
+    .noimgIcon{
+      width: 64px;
+      height: 48px;
+      border: 2px solid #bdbdbd;
+      border-radius: 8px;
+      position: relative;
+      background: rgba(255,255,255,.35);
+    }
+    .noimgIcon:before,
+    .noimgIcon:after{
+      content:"";
+      position:absolute;
+      border: 2px solid #bdbdbd;
+      border-radius: 6px;
+      background: rgba(255,255,255,.25);
+    }
+    .noimgIcon:before{
+      width: 36px; height: 28px;
+      left: 6px; top: 8px;
+    }
+    .noimgIcon:after{
+      width: 36px; height: 28px;
+      right: 6px; top: 8px;
+      opacity:.85;
+    }
+    .noimgText{
+      font-weight: 900;
+      letter-spacing: .14em;
+      font-size: 12px;
+      line-height: 1.1;
+    }
+    .noimgSub{
+      font-weight: 700;
+      letter-spacing: .06em;
+      font-size: 10px;
+      color:#8a8a8a;
+    }
+
+    /* Amazonボタン */
     .btnwrap{ padding: 7px 7px 9px; }
     .btn{
       display:block;
       text-align:center;
-      padding: 7px 0;
+      padding: 8px 0;
       border-radius: 999px;
       border: 1px solid var(--border);
       font-size: 12px;
       text-decoration:none;
-      color:#222;
+      color:#333;
       background:#fff;
       user-select:none;
     }
-    .btn:active{ transform: translateY(1px); }
 
-    /* iPhoneの細い画面でも4列維持 */
+    /* ローディング骨組み */
+    .skeleton{ animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse{
+      0%{ opacity: .65; }
+      50%{ opacity: .9; }
+      100%{ opacity: .65; }
+    }
+
     @media (max-width: 390px){
       :root{ --gap: 8px; }
       .wrap{ padding: 8px 10px 10px; }
       .btn{ font-size: 11px; }
       .h{ font-size: 17px; }
-    }
-
-    /* エラー表示 */
-    .err{
-      color:#b00;
-      font-size:12px;
-      padding: 6px 0;
+      .noimgIcon{ width: 58px; height: 44px; }
     }
   </style>
 </head>
+
 <body>
   <div class="wrap">
     <div class="topbar">
-      <h2 class="h" id="title">ラノベ新刊一覧</h2>
-      <!-- 固定ページやめたので「もっと見る」は削除 -->
+      <h2 class="h">ラノベ新刊一覧</h2>
     </div>
 
     <div class="grid" id="grid"></div>
-    <div class="err" id="err"></div>
   </div>
 
 <script>
-  // GitHub Pages同一オリジンのJSON
   const DATA_URL = "./data/books.json";
-
-  // “ダミー書影”をSVGで埋め込み（ファイル追加なし・確実に表示）
-  const FALLBACK_COVER = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`
-    <svg xmlns="http://www.w3.org/2000/svg" width="600" height="800" viewBox="0 0 600 800">
-      <defs>
-        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#f4f4f7"/>
-          <stop offset="1" stop-color="#ededf2"/>
-        </linearGradient>
-        <filter id="s" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000" flood-opacity=".08"/>
-        </filter>
-      </defs>
-
-      <rect width="600" height="800" fill="url(#g)"/>
-      <rect x="60" y="90" width="480" height="620" rx="28" fill="#fff" filter="url(#s)"/>
-
-      <!-- 本のアイコン -->
-      <g transform="translate(180,250)" fill="none" stroke="#c7c7d2" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M30 20 h170 a30 30 0 0 1 30 30 v240 a30 30 0 0 1-30 30 H30 a30 30 0 0 0-30 30 V50 a30 30 0 0 1 30-30z"/>
-        <path d="M230 20 h140 a30 30 0 0 1 30 30 v240 a30 30 0 0 1-30 30 H230 a30 30 0 0 0-30 30 V50 a30 30 0 0 1 30-30z"/>
-        <path d="M60 90 h120"/>
-        <path d="M260 90 h120"/>
-      </g>
-
-      <text x="300" y="590" text-anchor="middle" font-family="system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif"
-            font-size="54" font-weight="800" fill="#a7a7b5" letter-spacing="0.08em">NO IMAGE</text>
-
-      <text x="300" y="640" text-anchor="middle" font-family="system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif"
-            font-size="22" font-weight="700" fill="#b6b6c2">Light Novel New Releases</text>
-    </svg>
-  `);
-
   const grid = document.getElementById("grid");
-  const errBox = document.getElementById("err");
 
   function escapeHtml(s){
     return String(s ?? "").replace(/[&<>"']/g, m => ({
@@ -147,51 +191,74 @@
     }[m]));
   }
 
-  function normalizeCoverUrl(url){
-    if(!url) return "";
-    // GitHub Pages(https)で http 画像が混じると弾かれる可能性があるので https を優先
-    return String(url).replace(/^http:\/\//i, "https://");
+  function skeleton8(){
+    const card = `
+      <div class="card skeleton">
+        <div class="coverWrap"></div>
+        <div class="btnwrap"><div class="btn" style="color:#aaa;">Amazon</div></div>
+      </div>`;
+    grid.innerHTML = card.repeat(8);
+  }
+
+  function noImageHtml(){
+    return `
+      <div class="noimg">
+        <div class="noimgBox">
+          <div class="noimgIcon" aria-hidden="true"></div>
+          <div class="noimgText">NO&nbsp;IMAGE</div>
+          <div class="noimgSub">cover unavailable</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function cardHtml(it){
+    const title = escapeHtml(it.title || "");
+    const cover = it.cover || "";   // null/"" あり得る
+    const amazon = it.amazon || "#";
+
+    return `
+      <div class="card">
+        <a href="${escapeHtml(amazon)}" target="_blank" rel="nofollow noopener"
+           style="display:block;text-decoration:none;color:inherit;">
+          <div class="coverWrap">
+            ${cover ? `<img class="cover" src="${escapeHtml(cover)}" alt="${title}">` : noImageHtml()}
+          </div>
+        </a>
+        <div class="btnwrap">
+          <a class="btn" href="${escapeHtml(amazon)}" target="_blank" rel="nofollow noopener">Amazon</a>
+        </div>
+      </div>
+    `;
+  }
+
+  function attachImageFallback(){
+    document.querySelectorAll("img.cover").forEach(img => {
+      img.addEventListener("error", () => {
+        const wrap = img.closest(".coverWrap");
+        if(!wrap) return;
+        img.remove();
+        if(wrap.querySelector(".noimg")) return;
+        wrap.insertAdjacentHTML("beforeend", noImageHtml());
+      }, { once:true });
+    });
   }
 
   async function main(){
-    errBox.textContent = "";
+    skeleton8();
 
     const res = await fetch(DATA_URL + "?v=" + Date.now(), { cache:"no-store" });
-    if(!res.ok) throw new Error("books.json が読めませんでした");
-    const data = await res.json();
+    if(!res.ok) throw new Error(`books.json fetch failed: ${res.status}`);
 
+    const data = await res.json();
     const items = (data.items || []).slice(0, 8);
 
-    // 8冊未満なら空カードで埋めて“棚”を崩さない（見た目優先）
-    while(items.length < 8) items.push({ title:"", cover:"", amazon:"#", _empty:true });
-
-    grid.innerHTML = items.map(it => {
-      const title = escapeHtml(it.title || "");
-      const amazon = it.amazon || "#";
-      const cover = normalizeCoverUrl(it.cover) || FALLBACK_COVER;
-
-      // 空カード（データ不足の穴埋め）はリンク無効にする
-      const linkOpen = it._empty ? `<div>` : `<a href="${amazon}" target="_blank" rel="nofollow noopener">`;
-      const linkClose = it._empty ? `</div>` : `</a>`;
-      const btn = it._empty
-        ? `<div class="btn" style="opacity:.35">Amazon</div>`
-        : `<a class="btn" href="${amazon}" target="_blank" rel="nofollow noopener">Amazon</a>`;
-
-      return `
-        <div class="card">
-          ${linkOpen}
-            <img class="cover" src="${cover}" alt="${title}">
-          ${linkClose}
-          <div class="btnwrap">
-            ${btn}
-          </div>
-        </div>
-      `;
-    }).join("");
+    grid.innerHTML = items.map(cardHtml).join("");
+    attachImageFallback();
   }
 
-  main().catch(e => {
-    errBox.textContent = "読み込みエラー： " + escapeHtml(e.message);
+  main().catch(err => {
+    grid.innerHTML = `<div style="color:#b00;font-size:12px;">読み込みエラー：${escapeHtml(err.message)}</div>`;
   });
 </script>
 </body>
