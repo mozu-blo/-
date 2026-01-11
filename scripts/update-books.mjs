@@ -139,9 +139,18 @@ function pick(entry, fallbackIsbn){
   const s = entry.summary || {};
   const isbn = normIsbn(s.isbn || fallbackIsbn);
   const title = s.title || "";
-  const cover = s.cover || "";
-  if(!isbn || !title || !cover) return null;
-  return { isbn, title, cover, amazon: amazonUrlFromIsbn(isbn) };
+
+  if(!isbn || !title) return null;
+
+  // coverが無い場合はnullにして通す
+  const cover = s.cover && s.cover.trim() !== "" ? s.cover : null;
+
+  return {
+    isbn,
+    title,
+    cover,
+    amazon: amazonUrlFromIsbn(isbn)
+  };
 }
 
 async function main(){
