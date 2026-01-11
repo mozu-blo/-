@@ -1,5 +1,54 @@
 {
-  "generated_at": "2026-01-11T11:11:18.171Z",
+  "generated_at": "2026-01-11T12:16:47.276Z",
   "source": "https://www.trc.co.jp/trc_opendata/data/TRCOpenBibData_20260110.zip",
-  "items": []
+  "items": [
+    {
+      "isbn": "9784040760520",
+      "title": "稀代の悪女、三度目の人生で【無才無能】を楽しむ５",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784040760520&tag=mozublo-22"
+    },
+    {
+      "isbn": "9784040761640",
+      "title": "住んでる場所が田舎すぎて、ダンジョン探索者が俺一人なんだが？ ２",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784040761640&tag=mozublo-22"
+    },
+    {
+      "isbn": "9784040762425",
+      "title": "剣と魔法と学歴社会 ７　～前世はガリ勉だった俺が、今世は風任せで自由に生きたい～",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784040762425&tag=mozublo-22"
+    },
+    {
+      "isbn": "9784040762432",
+      "title": "鍛冶屋ではじめる異世界スローライフ 13",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784040762432&tag=mozublo-22"
+    },
+    {
+      "isbn": "9784040762456",
+      "title": "フェイスレス・ドロップアウト ２　無貌の引退傭兵は戦略物資を確保したい",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784040762456&tag=mozublo-22"
+    },
+    {
+      "isbn": "9784040762463",
+      "title": "小物貴族が性に合うようです",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784040762463&tag=mozublo-22"
+    },
+    {
+      "isbn": "9784040762494",
+      "title": "サイレント・ウィッチ : 沈黙の魔女の隠しごと １１",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784040762494&tag=mozublo-22"
+    },
+    {
+      "isbn": "9784049160604",
+      "title": "リコリス・リコイル　Gluttony days",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784049160604&tag=mozublo-22"
+    }
+  ]
 }
