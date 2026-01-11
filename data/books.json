@@ -1,5 +1,54 @@
 {
-  "generated_at": "2026-01-11T09:08:50.293Z",
+  "generated_at": "2026-01-11T09:13:26.993Z",
   "source": "https://www.trc.co.jp/trc_opendata/data/TRCOpenBibData_20260110.zip",
-  "items": []
+  "items": [
+    {
+      "isbn": "9784000229852",
+      "title": "国際法で世界がわかる 新版 : ニュースを読み解く33講",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784000229852&tag=mozublo-22"
+    },
+    {
+      "isbn": "9784000237505",
+      "title": "即興がつなぐ未来 音楽と社会の狭間でおっとっと",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784000237505&tag=mozublo-22"
+    },
+    {
+      "isbn": "9784000245616",
+      "title": "百武三郎日記 侍従長が見た昭和天皇と戦争 : 昭和17年1月～19年9月／関連資料・索引",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784000245616&tag=mozublo-22"
+    },
+    {
+      "isbn": "9784000272100",
+      "title": "神さまや鬼とのふしぎな話",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784000272100&tag=mozublo-22"
+    },
+    {
+      "isbn": "9784004320913",
+      "title": "明治維新10講",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784004320913&tag=mozublo-22"
+    },
+    {
+      "isbn": "9784004320920",
+      "title": "自治体は何のためにあるのか : 〈地域活性化〉を問い直す",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784004320920&tag=mozublo-22"
+    },
+    {
+      "isbn": "9784004320937",
+      "title": "中高年シングル女性 : ひとりで暮らすわたしたちのこと",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784004320937&tag=mozublo-22"
+    },
+    {
+      "isbn": "9784004320944",
+      "title": "多様性とどう向き合うか : 違和感から考える",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784004320944&tag=mozublo-22"
+    }
+  ]
 }
