@@ -73,16 +73,59 @@ function extractIsbnsFromTsv(tsvText){
   const lines = tsvText.split(/\r?\n/).filter(Boolean);
   if(lines.length === 0) return [];
 
-  const header = lines[0].split("\t");
-  const isbnIdx = header.findIndex(h => /isbn/i.test(h));
-  if(isbnIdx === -1) throw new Error("ISBN column not found in TSV header");
+  // TRCは「TSVっぽいtxt」で、区切りがタブのことが多いが念のため判定
+  const headerLine = lines[0];
+  const sep = headerLine.includes("\t") ? "\t" : ",";
 
+  const header = headerLine.split(sep).map(s => s.trim());
+
+  // 1) まずはヘッダ名で探す（TRCの表記ゆれ対応）
+  const isbnIdxByHeader = header.findIndex(h =>
+    /isbn/i.test(h) ||
+    /isbn13/i.test(h) ||
+    /isbn_?13/i.test(h) ||
+    /国際標準図書番号/.test(h) ||
+    /標準図書番号/.test(h)
+  );
+
+  // 2) ヘッダ名で見つからなければ「実データを見てISBNっぽい列」を推定する
+  let isbnIdx = isbnIdxByHeader;
+  if(isbnIdx === -1){
+    // 先頭200行くらいでスコアリング
+    const maxCols = Math.max(...lines.slice(0, 200).map(l => l.split(sep).length));
+    const scores = new Array(maxCols).fill(0);
+
+    for(const line of lines.slice(1, 200)){
+      const cols = line.split(sep);
+      for(let i=0;i<maxCols;i++){
+        const v = normIsbn(cols[i]);
+        // ISBN-13(978/979) を強く加点、ISBN-10も少し加点
+        if(v.length === 13 && (v.startsWith("978") || v.startsWith("979"))) scores[i] += 3;
+        else if(v.length === 10) scores[i] += 1;
+      }
+    }
+
+    // 一番スコアが高い列を採用（ただし最低限の得点を要求）
+    const best = scores
+      .map((s,i)=>({s,i}))
+      .sort((a,b)=>b.s-a.s)[0];
+
+    if(!best || best.s < 5){
+      console.log("HEADER:", header);
+      console.log("SCORES:", scores);
+      throw new Error("ISBN column not found (by header nor by data)");
+    }
+    isbnIdx = best.i;
+  }
+
+  // 3) ISBN列から抽出
   const isbns = [];
   for(let i=1;i<lines.length;i++){
-    const cols = lines[i].split("\t");
+    const cols = lines[i].split(sep);
     const isbn = normIsbn(cols[isbnIdx]);
     if(isbn && isbn.length >= 10) isbns.push(isbn);
   }
+
   return uniq(isbns);
 }
 
