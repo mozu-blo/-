@@ -45,7 +45,7 @@
 
 <script>
   // ★あなたのAmazonアソシエイトタグに置き換え（例: "yourtag-22"）
-  const AMAZON_TAG = "yourtag-22";
+  const AMAZON_TAG = "mozublo-22";
 
   function amazonUrlFromIsbn(isbn) {
     const q = encodeURIComponent(isbn);
