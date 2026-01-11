@@ -1,10 +1,14 @@
 // scripts/update-books.mjs
-// 目的：新刊RSS → ISBN抽出 → openBDで書影/タイトル取得 → data/books.json更新
+// 目的：TRC新刊TSV(zip) → ISBN抽出 → openBDで書影/タイトル取得 → data/books.json更新
 // AmazonはPA-APIなしで検索URL + tag 方式（追跡ID）
 
 import fs from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
-const RSS_URL = "http://www.hanmoto.com/bd/shinkan/feed/";
+const execFileAsync = promisify(execFile);
+
+const TRC_PAGE = "https://www.trc.co.jp/trc_opendata/";
 const OPENBD = "https://api.openbd.jp/v1/get?isbn=";
 const AMAZON_TAG = "mozublo-22";
 
@@ -20,18 +24,59 @@ async function fetchText(url){
   if(!res.ok) throw new Error(`fetch failed ${res.status} ${url}`);
   return await res.text();
 }
+
 async function fetchJson(url){
   const res = await fetch(url, { headers: { "user-agent": "mozublo-bot/1.0" }});
   if(!res.ok) throw new Error(`fetch failed ${res.status} ${url}`);
   return await res.json();
 }
 
-function extractIsbnsFromRss(xml){
-  // 版元ドットコムのRSSは /bd/ISBN978-...html が多いのでそこを拾う
-  const a = [...xml.matchAll(/\/bd\/ISBN([0-9][0-9\-]{10,20}[0-9Xx])\.html/g)].map(m => normIsbn(m[1]));
-  // 念のため本文の ISBN: 978-... も拾う
-  const b = [...xml.matchAll(/ISBN[^0-9]*([0-9][0-9\-]{10,20}[0-9Xx])/g)].map(m => normIsbn(m[1]));
-  return uniq([...a, ...b]).filter(x => x.length >= 10);
+async function fetchBinToFile(url, filepath){
+  const res = await fetch(url, { headers: { "user-agent": "mozublo-bot/1.0" }});
+  if(!res.ok) throw new Error(`fetch failed ${res.status} ${url}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  await fs.writeFile(filepath, buf);
+}
+
+async function findLatestTrcZipUrl(){
+  const html = await fetchText(TRC_PAGE);
+
+  // ページ内に zip へのリンクが複数あるので、とりあえず「最初の .zip」を最新として採用
+  // （TRCページは新しい日付が上に来る構造）
+  const m = html.match(/href="([^"]+\.zip)"/i);
+  if(!m) throw new Error("TRC zip link not found");
+
+  const abs = new URL(m[1], TRC_PAGE).toString();
+  return abs;
+}
+
+async function unzipFirstTsv(zipPath){
+  // zip内のファイル名一覧
+  const { stdout: list } = await execFileAsync("unzip", ["-Z1", zipPath]);
+  const names = list.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const tsv = names.find(n => n.toLowerCase().endsWith(".tsv"));
+  if(!tsv) throw new Error("TSV not found in zip");
+
+  // tsv本文をstdoutで取得
+  const { stdout } = await execFileAsync("unzip", ["-p", zipPath, tsv], { maxBuffer: 20 * 1024 * 1024 });
+  return stdout;
+}
+
+function extractIsbnsFromTsv(tsvText){
+  const lines = tsvText.split(/\r?\n/).filter(Boolean);
+  if(lines.length === 0) return [];
+
+  const header = lines[0].split("\t");
+  const isbnIdx = header.findIndex(h => /isbn/i.test(h));
+  if(isbnIdx === -1) throw new Error("ISBN column not found in TSV header");
+
+  const isbns = [];
+  for(let i=1;i<lines.length;i++){
+    const cols = lines[i].split("\t");
+    const isbn = normIsbn(cols[isbnIdx]);
+    if(isbn && isbn.length >= 10) isbns.push(isbn);
+  }
+  return uniq(isbns);
 }
 
 async function openbdBatch(isbns){
@@ -50,11 +95,17 @@ function pick(entry, fallbackIsbn){
 }
 
 async function main(){
-  const rss = await fetchText(RSS_URL);
-  const isbnsAll = extractIsbnsFromRss(rss);
+  const zipUrl = await findLatestTrcZipUrl();
+  const tmpZip = "data/_trc_latest.zip";
+
+  await fs.mkdir("data", { recursive: true });
+  await fetchBinToFile(zipUrl, tmpZip);
+
+  const tsv = await unzipFirstTsv(tmpZip);
+  const isbnsAll = extractIsbnsFromTsv(tsv);
 
   // null混入を見越して多めに取得（棚は8冊）
-  const take = 40;
+  const take = 60;
   const isbns = isbnsAll.slice(0, take);
 
   const openbd = await openbdBatch(isbns);
@@ -65,20 +116,18 @@ async function main(){
     if(b) items.push(b);
   }
 
-  // “ラノベっぽい語”が入るものを少し優先（強すぎると0件になるので軽め）
+  // “ラノベっぽい語”が入るものを少し優先（軽め）
   const keys = ["ライトノベル","ラノベ","文庫","ノベル","小説"];
   const score = (t)=> keys.reduce((a,k)=>a+(t.includes(k)?1:0),0);
   items.sort((a,b)=> score(b.title) - score(a.title));
 
   const out = {
     generated_at: new Date().toISOString(),
-    source: RSS_URL,
+    source: zipUrl,
     items: items.slice(0, 8)
   };
 
-  await fs.mkdir("data", { recursive: true });
   await fs.writeFile("data/books.json", JSON.stringify(out, null, 2), "utf-8");
-
   console.log("OK:", out.items.length, "items");
 }
 
