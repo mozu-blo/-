@@ -1,7 +1,8 @@
 // scripts/update-books.mjs
-// 目的：TRC新刊TSV/TXT(zip) → ISBN抽出（列揺れ耐性）→ whitelist.json（レーベル一致）
-// → openBDで書影/タイトル取得 → data/books.json更新（ロケットえんぴつ方式）
-// ※items=0 の日は books.json を更新しない（表示が真っ白にならない）
+// TRC新刊(zip内TSV/TXT) → ISBN抽出（列揺れ耐性）→ whitelist.json（レーベル一致）
+// → openBDでタイトル/書影 → cover欠損はNDL/OpenLibraryで補完
+// → data/books.json をロケットえんぴつ方式で更新（最大8枠維持）
+// ※items=0 の日は books.json を更新しない（真っ白回避）
 
 import fs from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -11,6 +12,7 @@ const execFileAsync = promisify(execFile);
 
 const TRC_PAGE = "https://www.trc.co.jp/trc_opendata/";
 const OPENBD = "https://api.openbd.jp/v1/get?isbn=";
+
 const AMAZON_TAG = "mozublo-22";
 
 // 取りに行く候補数（多めに取って whitelist で絞る）
@@ -20,6 +22,12 @@ const OPENBD_CHUNK = 100;
 
 // whitelist
 const WHITELIST_PATH = "data/whitelist.json";
+// output
+const BOOKS_PATH = "data/books.json";
+
+// 書影フォールバック（実在チェックして採用）
+const NDL_THUMB = (isbn13) => `https://ndlsearch.ndl.go.jp/thumbnail/${isbn13}.jpg`; // 404あり
+const OL_THUMB = (isbn13) => `https://covers.openlibrary.org/b/isbn/${isbn13}-L.jpg?default=false`; // 404あり
 
 // ---------- utils ----------
 function uniq(arr){ return [...new Set(arr)]; }
@@ -29,9 +37,7 @@ function normStr(s){
 }
 
 function normIsbn(s){
-  // 978/979 + 10桁 or 13桁、ハイフン等を除去
   const t = normStr(s).replace(/[^0-9Xx]/g,"").toUpperCase();
-  // ISBN10も来たら13に変換…はしない（TRCは基本ISBN13）
   return t;
 }
 
@@ -41,7 +47,6 @@ function isIsbn13Like(s){
 }
 
 function extractIsbnFromTextLine(line){
-  // 行全体から ISBN13 を拾う（列推定できないときの保険）
   const m = normStr(line).match(/97[89]\d{10}/);
   return m ? m[0] : "";
 }
@@ -69,10 +74,42 @@ async function fetchBinToFile(url, filepath){
   await fs.writeFile(filepath, buf);
 }
 
+async function exists(path){
+  return await fs.access(path).then(()=>true).catch(()=>false);
+}
+
+// timeout付きfetch（画像存在チェック用）
+async function fetchWithTimeout(url, opts = {}, ms = 4000){
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), ms);
+  try{
+    const res = await fetch(url, { ...opts, signal: ac.signal, headers: { "user-agent": "mozublo-bot/1.0", ...(opts.headers||{}) } });
+    return res;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// 画像URLが実在するか確認して、OKならURLを返す
+async function probeImage(url){
+  try{
+    // HEADが弾かれることがあるのでGET（軽量）
+    const res = await fetchWithTimeout(url, { method: "GET" }, 5000);
+    if(!res.ok) return null;
+
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+    // 画像ならOK（ctが取れないケースもあるので甘め）
+    if(ct && !ct.startsWith("image/")) return null;
+
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 // ---------- TRC ----------
 async function findLatestTrcZipUrl(){
   const html = await fetchText(TRC_PAGE);
-  // TRCページは新しいのが上の想定：最初の .zip を採用
   const m = html.match(/href="([^"]+\.zip)"/i);
   if(!m) throw new Error("TRC zip link not found");
   return new URL(m[1], TRC_PAGE).toString();
@@ -82,7 +119,6 @@ async function unzipPickTextFile(zipPath){
   const { stdout: list } = await execFileAsync("unzip", ["-Z1", zipPath]);
   const names = list.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 
-  // TSV/TXT を優先して拾う（TRCは .txt のことがある）
   const pick =
     names.find(n => n.toLowerCase().endsWith(".tsv")) ||
     names.find(n => n.toLowerCase().endsWith(".txt")) ||
@@ -93,7 +129,6 @@ async function unzipPickTextFile(zipPath){
   console.log("ZIP CONTENTS picked:", pick);
 
   const { stdout } = await execFileAsync("unzip", ["-p", zipPath, pick], {
-    // 大きめに（TRCはそこそこサイズある）
     maxBuffer: 50 * 1024 * 1024,
   });
   return stdout;
@@ -117,15 +152,12 @@ function lineHasAnyLabel(line, labels){
   return labels.some(lb => lb && t.includes(lb));
 }
 
-function cellHasAnyLabel(cell, labels){
-  if(labels.length === 0) return false;
-  const t = normStr(cell);
-  return labels.some(lb => lb && t.includes(lb));
-}
-
 // ---------- parsing / inference ----------
 function splitLines(text){
-  return String(text ?? "").split(/\r?\n/).map(s => s.replace(/\u0000/g,"")).filter(s => s.trim().length > 0);
+  return String(text ?? "")
+    .split(/\r?\n/)
+    .map(s => s.replace(/\u0000/g,""))
+    .filter(s => s.trim().length > 0);
 }
 
 function detectDelimiter(line){
@@ -141,7 +173,6 @@ function parseTable(lines){
   const rows = lines.map(l => l.split(delim));
   const maxCols = Math.max(...rows.map(r => r.length));
 
-  // 全行を同じ列数にそろえる
   const normRows = rows.map(r => {
     if(r.length === maxCols) return r;
     return [...r, ...Array(maxCols - r.length).fill("")];
@@ -151,12 +182,10 @@ function parseTable(lines){
 }
 
 function inferIsbnColumn(header, rows){
-  // 1) ヘッダ名に ISBN が含まれていれば最優先
   const h = header.map(x => normStr(x));
   let idx = h.findIndex(x => x.toLowerCase().includes("isbn"));
   if(idx !== -1) return idx;
 
-  // 2) 実データで ISBN13っぽい値が多い列を採用
   const sample = rows.slice(0, 200);
   if(sample.length === 0) return -1;
 
@@ -178,7 +207,6 @@ function inferIsbnColumn(header, rows){
     }
   }
 
-  // 3件以上一致がないなら「列推定できない」
   if(bestCount < 3) return -1;
   return best;
 }
@@ -195,7 +223,6 @@ function extractIsbnsFromTrcText(text, labels){
   const isbns = [];
 
   for(const r of rows){
-    // label_only：行のどこかにホワイトリストのレーベル文字列が含まれること
     const joined = r.join("\t");
     if(!lineHasAnyLabel(joined, labels)) continue;
 
@@ -215,14 +242,11 @@ function extractIsbnsFromTrcText(text, labels){
 
 // ---------- openBD ----------
 function pickCover(entry){
-  // openBDは summary.cover が null のことがあるので保険を複数
   const s = entry?.summary || {};
   if(s.cover) return s.cover;
 
-  // hanmoto
   if(entry?.hanmoto?.cover) return entry.hanmoto.cover;
 
-  // onix（存在する場合）
   const link =
     entry?.onix?.CollateralDetail?.SupportResource?.[0]?.ResourceVersion?.[0]?.ResourceLink;
   if(link) return link;
@@ -234,7 +258,6 @@ function pickTitle(entry){
   const s = entry?.summary || {};
   if(s.title) return s.title;
 
-  // onix title fallback
   const t =
     entry?.onix?.DescriptiveDetail?.TitleDetail?.[0]?.TitleElement?.[0]?.TitleText?.content;
   if(t) return t;
@@ -261,7 +284,6 @@ function pick(entry, fallbackIsbn){
 }
 
 async function openbdBatch(isbns){
-  // chunked
   const out = [];
   for(let i=0;i<isbns.length;i+=OPENBD_CHUNK){
     const chunk = isbns.slice(i, i+OPENBD_CHUNK);
@@ -270,6 +292,67 @@ async function openbdBatch(isbns){
     out.push(...res);
   }
   return out;
+}
+
+// ---------- cover fallback ----------
+async function fillMissingCovers(items){
+  // coverがnullのものだけ補完
+  for(const it of items){
+    if(it.cover) continue;
+
+    const isbn13 = normIsbn(it.isbn);
+    if(!/^97[89]\d{10}$/.test(isbn13)) continue;
+
+    // 1) NDL thumbnail（あれば最優先）
+    const ndl = await probeImage(NDL_THUMB(isbn13));
+    if(ndl){
+      it.cover = ndl;
+      continue;
+    }
+
+    // 2) Open Library covers
+    const ol = await probeImage(OL_THUMB(isbn13));
+    if(ol){
+      it.cover = ol;
+      continue;
+    }
+  }
+  return items;
+}
+
+// ---------- rocket pencil merge ----------
+async function loadExistingItems(){
+  try{
+    const raw = await fs.readFile(BOOKS_PATH, "utf-8");
+    const json = JSON.parse(raw);
+    const items = Array.isArray(json.items) ? json.items : [];
+    // 最低限の形だけ整える
+    return items
+      .map(x => ({
+        isbn: normIsbn(x?.isbn),
+        title: String(x?.title ?? ""),
+        cover: x?.cover ?? null,
+        amazon: x?.amazon ?? (x?.isbn ? amazonUrlFromIsbn(normIsbn(x.isbn)) : "#"),
+      }))
+      .filter(x => /^97[89]\d{10}$/.test(x.isbn) && x.title);
+  } catch {
+    return [];
+  }
+}
+
+function mergeRocketPencil(newItems, oldItems, limit = 8){
+  // 先頭にnewItems、後ろにoldItems。ISBN重複は「先に出た方」を採用
+  const seen = new Set();
+  const merged = [];
+
+  for(const it of [...newItems, ...oldItems]){
+    const k = normIsbn(it?.isbn);
+    if(!k || seen.has(k)) continue;
+    seen.add(k);
+    merged.push(it);
+    if(merged.length >= limit) break;
+  }
+  return merged;
 }
 
 // ---------- main ----------
@@ -282,20 +365,18 @@ async function main(){
   const tmpZip = "data/_trc_latest.zip";
 
   await fetchBinToFile(zipUrl, tmpZip);
-
   const trcText = await unzipPickTextFile(tmpZip);
 
   const isbnsAll = extractIsbnsFromTrcText(trcText, labels);
   const isbns = isbnsAll.slice(0, TAKE_ISBNS);
 
   if(isbns.length === 0){
-    // ロケットえんぴつ方式：0件なら既存を維持（なければ空を作る）
-    const exists = await fs.access("data/books.json").then(()=>true).catch(()=>false);
-    if(!exists){
+    // items=0日は更新しない（既存が無い場合だけ空を作る）
+    if(!(await exists(BOOKS_PATH))){
       const out0 = { generated_at: new Date().toISOString(), source: zipUrl, items: [] };
-      await fs.writeFile("data/books.json", JSON.stringify(out0, null, 2), "utf-8");
+      await fs.writeFile(BOOKS_PATH, JSON.stringify(out0, null, 2), "utf-8");
       console.log("OK: 0 items (books.json created empty because it did not exist)");
-    }else{
+    } else {
       console.log("OK: 0 items (no label-matched isbns) -> keep existing books.json");
     }
     return;
@@ -303,28 +384,34 @@ async function main(){
 
   const openbd = await openbdBatch(isbns);
 
-  const items = [];
+  // openBD結果から itemsToday を作る（まず多めに作って、最後に8にする）
+  const itemsTodayAll = [];
   for(let i=0;i<openbd.length;i++){
     const b = pick(openbd[i], isbns[i]);
-    if(b) items.push(b);
+    if(b) itemsTodayAll.push(b);
   }
 
-  // 8件以上取れない日があっても、ここでは “取れたぶんだけ” 返す
-  // 表示側で “埋め” はしない（表示の正しさ優先）
-  const out = {
-    generated_at: new Date().toISOString(),
-    source: zipUrl,
-    items: items.slice(0, 8),
-  };
+  // 先に最大8だけに絞り、そこだけ書影補完（無駄なHTTPを減らす）
+  const itemsToday = await fillMissingCovers(itemsTodayAll.slice(0, 8));
 
-  if(out.items.length === 0){
-    // 0なら更新しない（ロケットえんぴつ）
+  if(itemsToday.length === 0){
+    // openBD/補完後に0になった日も更新しない
     console.log("OK: 0 items after openBD -> keep existing books.json");
     return;
   }
 
-  await fs.writeFile("data/books.json", JSON.stringify(out, null, 2), "utf-8");
-  console.log("OK:", out.items.length, "items");
+  // ロケットえんぴつ：既存と結合して常に最大8枠維持
+  const existing = await loadExistingItems();
+  const merged = mergeRocketPencil(itemsToday, existing, 8);
+
+  const out = {
+    generated_at: new Date().toISOString(),
+    source: zipUrl,
+    items: merged,
+  };
+
+  await fs.writeFile(BOOKS_PATH, JSON.stringify(out, null, 2), "utf-8");
+  console.log("OK:", out.items.length, "items (rocket pencil)");
 }
 
 main().catch(e => {
