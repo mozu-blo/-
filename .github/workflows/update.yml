@@ -1,16 +1,18 @@
 name: update-books
 
 on:
-  # 手動実行（作業・デバッグ用）
   workflow_dispatch:
-
-  # 定期実行（毎日 日本時間9:00）
   schedule:
+    # 毎日 朝9時（JST）に実行
+    # GitHub Actions は UTC 基準なので 0:00 UTC = 9:00 JST
     - cron: "0 0 * * *"
 
 jobs:
   update:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # ← これ超重要（自動commit用）
 
     steps:
       - name: Checkout
@@ -32,8 +34,8 @@ jobs:
           if git diff --quiet; then
             echo "No changes"
           else
-            git config user.name "github-actions"
-            git config user.email "github-actions@github.com"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
             git add data/books.json
             git commit -m "auto: update new lightnovels"
             git push
