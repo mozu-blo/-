@@ -29,23 +29,13 @@
       margin-bottom: 8px;
     }
     .h{
-      font-size: 16px;
-      font-weight: 800;
+      font-size: 18px;
+      font-weight: 900;
       margin: 0;
       letter-spacing: .02em;
     }
-    .more{
-      font-size: 12px;
-      padding: 8px 12px;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      text-decoration:none;
-      color:#4a2a7a;
-      background:#faf7ff;
-      white-space:nowrap;
-    }
 
-    /* 4冊×2段が基本 */
+    /* 4冊×2段 */
     .grid{
       display:grid;
       grid-template-columns: repeat(4, 1fr);
@@ -68,7 +58,21 @@
       object-fit: cover;
     }
 
-    /* 下ボタン */
+    /* NO IMAGE（画像が無い/壊れた場合） */
+    .noimg{
+      aspect-ratio: 3 / 4;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:#f2f2f2;
+      color:#777;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .06em;
+      user-select:none;
+    }
+
+    /* Amazonボタン */
     .btnwrap{ padding: 6px 6px 8px; }
     .btn{
       display:block;
@@ -83,36 +87,11 @@
       user-select:none;
     }
 
-    /* プレースホルダ（8枠埋め用） */
-    .ph .cover{
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      color:#888;
-      font-size:12px;
-      font-weight:700;
-      letter-spacing:.03em;
-    }
-    .ph .btn{
-      color:#777;
-      background:#fafafa;
-    }
-
-    /* エラー表示 */
-    .err{
-      color:#b00;
-      font-size:12px;
-      border:1px solid #f1c0c0;
-      background:#fff6f6;
-      padding:10px 12px;
-      border-radius:10px;
-      line-height:1.5;
-    }
-
     @media (max-width: 390px){
       :root{ --gap: 8px; }
       .wrap{ padding: 8px 10px 10px; }
       .btn{ font-size: 11px; }
+      .h{ font-size: 17px; }
     }
   </style>
 </head>
@@ -120,17 +99,14 @@
   <div class="wrap">
     <div class="topbar">
       <h2 class="h" id="title">ラノベ新刊一覧</h2>
-      <a class="more" id="moreLink" href="https://mozu.hateblo.jp/new-lightnovels">もっと見る</a>
     </div>
 
     <div class="grid" id="grid"></div>
   </div>
 
 <script>
-  // ★重要：リポジトリ名が「-」なので絶対パスに固定する
-  // Pages: https://mozu-blo.github.io/-/  → JSONは https://mozu-blo.github.io/-/data/books.json
-  const DATA_URL = "/-/data/books.json";
-
+  // GitHub Pages 同一オリジン
+  const DATA_URL = "./data/books.json";
   const grid = document.getElementById("grid");
 
   function escapeHtml(s){
@@ -139,66 +115,59 @@
     }[m]));
   }
 
-  // coverが無い時に使う“埋め込み”ダミー（外部参照なし）
-  const NO_COVER_SVG =
-    "data:image/svg+xml;utf8," +
-    encodeURIComponent(
-      "<svg xmlns='http://www.w3.org/2000/svg' width='300' height='400'>" +
-      "<rect width='100%' height='100%' fill='%23f2f2f2'/>" +
-      "<text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23777' font-size='16' font-family='sans-serif'>NO COVER</text>" +
-      "</svg>"
-    );
+  function cardHtml(it){
+    const title = escapeHtml(it.title || "");
+    const amazon = it.amazon || "#";
+    const cover = it.cover || "";
 
-  function renderCards(items){
-    grid.innerHTML = items.map(it => {
-      const title = escapeHtml(it.title || "");
-      const cover = it.cover ? it.cover : NO_COVER_SVG;
-      const amazon = it.amazon || "#";
-      const isPlaceholder = it.__placeholder === true;
-
-      if(isPlaceholder){
-        return `
-          <div class="card ph">
-            <div class="cover">UPDATING</div>
-            <div class="btnwrap">
-              <a class="btn" href="${escapeHtml(document.getElementById("moreLink").href)}">もっと見る</a>
-            </div>
-          </div>
-        `;
-      }
-
+    // coverが無いならNO IMAGE
+    if(!cover){
       return `
         <div class="card">
           <a href="${amazon}" target="_blank" rel="nofollow noopener">
-            <img class="cover" src="${cover}" alt="${title}" loading="lazy">
+            <div class="noimg">NO IMAGE</div>
           </a>
           <div class="btnwrap">
             <a class="btn" href="${amazon}" target="_blank" rel="nofollow noopener">Amazon</a>
           </div>
         </div>
       `;
-    }).join("");
+    }
+
+    // coverがある場合：img失敗時はNO IMAGEに差し替え
+    // （onerrorで img を消して NO IMAGE div を挿入）
+    const safeCover = cover.replace(/"/g, "&quot;");
+
+    return `
+      <div class="card">
+        <a href="${amazon}" target="_blank" rel="nofollow noopener">
+          <img class="cover" src="${safeCover}" alt="${title}"
+            referrerpolicy="no-referrer"
+            onerror="this.outerHTML='<div class=&quot;noimg&quot;>NO IMAGE</div>';">
+        </a>
+        <div class="btnwrap">
+          <a class="btn" href="${amazon}" target="_blank" rel="nofollow noopener">Amazon</a>
+        </div>
+      </div>
+    `;
   }
 
   async function main(){
     const res = await fetch(DATA_URL + "?v=" + Date.now(), { cache:"no-store" });
-    if(!res.ok) throw new Error(`fetch failed: ${res.status}`);
-
+    if(!res.ok) throw new Error("books.json が取得できません");
     const data = await res.json();
-    const raw = Array.isArray(data.items) ? data.items : [];
 
-    // 8枠固定：足りない分はプレースホルダで埋める
-    const items = raw.slice(0, 8);
-    while(items.length < 8) items.push({ __placeholder: true });
+    const items = (data.items || []).slice(0, 8);
+    if(items.length === 0){
+      grid.innerHTML = `<div style="color:#666;font-size:12px;">新刊データが空です（items=0）</div>`;
+      return;
+    }
 
-    renderCards(items);
+    grid.innerHTML = items.map(cardHtml).join("");
   }
 
   main().catch(err => {
-    grid.innerHTML =
-      `<div class="err">読み込みエラー：${escapeHtml(err.message)}<br>` +
-      `DATA_URL：${escapeHtml(DATA_URL)}<br>` +
-      `（books.json が存在するか / パスが合っているか確認）</div>`;
+    grid.innerHTML = `<div style="color:#b00;font-size:12px;">読み込みエラー：${escapeHtml(err.message)}</div>`;
   });
 </script>
 </body>
