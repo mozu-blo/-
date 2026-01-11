@@ -42,23 +42,30 @@ async function findLatestTrcZipUrl(){
   const html = await fetchText(TRC_PAGE);
 
   // ページ内に zip へのリンクが複数あるので、とりあえず「最初の .zip」を最新として採用
-  // （TRCページは新しい日付が上に来る構造）
   const m = html.match(/href="([^"]+\.zip)"/i);
   if(!m) throw new Error("TRC zip link not found");
 
-  const abs = new URL(m[1], TRC_PAGE).toString();
-  return abs;
+  return new URL(m[1], TRC_PAGE).toString();
 }
 
 async function unzipFirstTsv(zipPath){
   // zip内のファイル名一覧
   const { stdout: list } = await execFileAsync("unzip", ["-Z1", zipPath]);
   const names = list.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-  const tsv = names.find(n => n.toLowerCase().endsWith(".tsv"));
-  if(!tsv) throw new Error("TSV not found in zip");
 
-  // tsv本文をstdoutで取得
-  const { stdout } = await execFileAsync("unzip", ["-p", zipPath, tsv], { maxBuffer: 20 * 1024 * 1024 });
+  // ★デバッグ：実際の中身をログに出す（次の失敗で原因が確定できる）
+  console.log("ZIP CONTENTS:", names);
+
+  // ★ .tsv 以外（.txt/.csv）や、サブディレクトリ配下にも対応
+  const pick = names.find(n => {
+    const x = n.toLowerCase();
+    return x.endsWith(".tsv") || x.endsWith(".txt") || x.endsWith(".csv");
+  });
+
+  if(!pick) throw new Error("TSV not found in zip");
+
+  // 取得したファイル本文をstdoutで取得
+  const { stdout } = await execFileAsync("unzip", ["-p", zipPath, pick], { maxBuffer: 30 * 1024 * 1024 });
   return stdout;
 }
 
