@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-01-11T09:40:58.535Z",
+  "generated_at": "2026-01-11T09:51:21.666Z",
   "source": "https://www.trc.co.jp/trc_opendata/data/TRCOpenBibData_20260110.zip",
   "mode": "label_only",
   "items": [
@@ -30,6 +30,34 @@
       "cover": null,
       "amazon": "https://www.amazon.co.jp/s?k=9784086316330&tag=mozublo-22",
       "label": "ダッシュエックス文庫"
+    },
+    {
+      "isbn": "9784391165494",
+      "title": "腹黒次期宰相フェリクス・シュミットはほんわか令嬢の策に嵌まる ２",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784391165494&tag=mozublo-22",
+      "label": "PASH！ブックス"
+    },
+    {
+      "isbn": "9784391166576",
+      "title": "呪われたモフモフと追放聖女のもぐもぐ辺境暮らし",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784391166576&tag=mozublo-22",
+      "label": "PASH！ブックス"
+    },
+    {
+      "isbn": "9784391166682",
+      "title": "私、一夜の夢を売ると噂の毒婦ですが、英雄を溺愛に目覚めさせてしまいました （下）",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784391166682&tag=mozublo-22",
+      "label": "PASH！ブックス"
+    },
+    {
+      "isbn": "9784434371448",
+      "title": "もふもふが溢れる異世界で幸せ加護持ち生活！",
+      "cover": null,
+      "amazon": "https://www.amazon.co.jp/s?k=9784434371448&tag=mozublo-22",
+      "label": "アルファライト文庫"
     }
   ]
 }
