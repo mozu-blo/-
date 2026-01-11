@@ -152,7 +152,7 @@ async function main(){
   const isbnsAll = extractIsbnsFromTsv(raw);
 
   // レーベル一致のみなので取りこぼす → 多めに取る
-  const take = 400;
+  const take = 1200;
   const isbns = isbnsAll.slice(0, take);
 
   const openbd = await openbdBatch(isbns);
