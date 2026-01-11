@@ -5,88 +5,88 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>新刊棚</title>
   <style>
-    /* ====== 埋め込み用・最小構成 ====== */
-    html, body { margin: 0; padding: 0; background: transparent; }
+    html, body { margin:0; padding:0; background:transparent; }
     body { font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
 
-    .wrap { padding: 0; }
+    .wrap { padding:0; }
 
-    /* 見出し行（不要なら丸ごと削除OK） */
-    .bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      margin: 6px 10px 6px;
+    /* 見出し行：薄く、低く */
+    .bar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      margin:4px 8px 6px;
     }
-    .label {
-      font-size: 14px;
-      font-weight: 900;
-      margin: 0;
-      line-height: 1.2;
+    .label{
+      margin:0;
+      font-size:14px;
+      font-weight:900;
+      line-height:1.1;
     }
-    .more {
-      font-size: 12px;
-      border: 1px solid #e5e5e5;
-      background: #fff;
-      padding: 6px 10px;
-      border-radius: 999px;
-      text-decoration: none;
-      line-height: 1;
-      white-space: nowrap;
-    }
-
-    /* ====== 棚：3列×2段（6冊固定） ====== */
-    .shelf {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      padding: 0 10px 10px;
+    .more{
+      font-size:11px;
+      border:1px solid #e5e5e5;
+      background:#fff;
+      padding:5px 9px;
+      border-radius:999px;
+      text-decoration:none;
+      color:#111;
+      line-height:1;
+      white-space:nowrap;
     }
 
-    .item { display: flex; flex-direction: column; gap: 6px; }
-
-    /* 表紙 */
-    .cover {
-      border: 1px solid #eee;
-      border-radius: 10px;
-      overflow: hidden;
-      background: #f3f3f3;
-      aspect-ratio: 2 / 3;
-      display: grid;
-      place-items: center;
+    /* 棚：3列固定・余白圧縮 */
+    .shelf{
+      display:grid;
+      grid-template-columns:repeat(3, 1fr);
+      gap:6px;
+      padding:0 8px 8px;
     }
-    .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .item{ display:flex; flex-direction:column; gap:4px; }
 
-    /* Amazonボタン（控えめ） */
-    .btn {
-      display: block;
-      text-align: center;
-      font-size: 11px;
-      text-decoration: none;
-      border: 1px solid #e5e5e5;
-      background: #fff;
-      border-radius: 999px;
-      padding: 6px 0;
-      line-height: 1;
+    /* 表紙：縦を少し潰して「棚」を低く */
+    .cover{
+      border:1px solid #eee;
+      border-radius:10px;
+      overflow:hidden;
+      background:#f3f3f3;
+      aspect-ratio: 3 / 4;   /* ←ここが一番効く（高さが減る） */
+      display:grid;
+      place-items:center;
+    }
+    .cover img{ width:100%; height:100%; object-fit:cover; display:block; }
+
+    /* ボタンを細く */
+    a.btn{
+      display:block;
+      width:100%;
+      box-sizing:border-box;
+      text-align:center;
+      font-size:10px;
+      padding:5px 0;
+      border-radius:999px;
+      border:1px solid #e5e5e5;
+      background:#fff;
+      color:#111;
+      text-decoration:none;
+      line-height:1;
     }
 
-    /* 小さい端末向け微調整 */
-    @media (max-width: 360px) {
-      .bar { margin: 6px 8px 6px; }
-      .shelf { padding: 0 8px 10px; gap: 6px; }
-      .label { font-size: 13px; }
-      .more { font-size: 11px; padding: 6px 9px; }
-      .btn  { font-size: 10.5px; padding: 6px 0; }
-      .cover { border-radius: 9px; }
+    @media (max-width:360px){
+      .bar{ margin:4px 6px 6px; }
+      .shelf{ padding:0 6px 8px; gap:5px; }
+      .label{ font-size:13px; }
+      .more{ font-size:10.5px; padding:5px 8px; }
+      a.btn{ font-size:9.8px; padding:5px 0; }
+      .cover{ border-radius:9px; }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <!-- 見出しが不要なら、この .bar ブロックごと削除してOK -->
     <div class="bar">
-      <p class="label">ラノベ新刊一覧123（テスト中）</p>
+      <p class="label">ラノベ新刊一覧（テスト中）</p>
       <a class="more" href="https://mozu.hateblo.jp/new-lightnovels" target="_blank" rel="noopener">もっと見る</a>
     </div>
 
@@ -94,15 +94,12 @@
   </div>
 
 <script>
-  // Amazon追跡ID（設定済み）
   const AMAZON_TAG = "mozublo-22";
-
   function amazonUrlFromIsbn(isbn) {
     const q = encodeURIComponent(isbn);
     return `https://www.amazon.co.jp/s?k=${q}&tag=${encodeURIComponent(AMAZON_TAG)}`;
   }
 
-  // ダミー（本番では openBD の cover に差し替え）
   const items = [
     { isbn:"9784040000001", cover:"https://placehold.co/600x900?text=1" },
     { isbn:"9784040000002", cover:"https://placehold.co/600x900?text=2" },
@@ -113,14 +110,12 @@
   ];
 
   const shelf = document.getElementById("shelf");
-
   items.forEach(x => {
-    const aUrl = amazonUrlFromIsbn(x.isbn);
     const el = document.createElement("div");
     el.className = "item";
     el.innerHTML = `
       <div class="cover"><img src="${x.cover}" alt=""></div>
-      <a class="btn" href="${aUrl}" target="_blank" rel="nofollow noopener">Amazon</a>
+      <a class="btn" href="${amazonUrlFromIsbn(x.isbn)}" target="_blank" rel="nofollow noopener">Amazon</a>
     `;
     shelf.appendChild(el);
   });
