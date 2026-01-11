@@ -3,110 +3,138 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>新刊棚</title>
+  <title>ラノベ新刊棚</title>
   <style>
-    html, body { margin:0; padding:0; background:transparent; }
-    body { font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+    :root{
+      --gap: 10px;
+      --radius: 12px;
+      --border: #e8e8e8;
+      --text: #111;
+      --muted: #666;
+      --bg: #fff;
+    }
+    body{ margin:0; background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; }
+    .wrap{ padding: 10px 12px 12px; }
 
-    /* 見出し行（不要なら .bar ごと消してOK） */
-    .bar{
+    .topbar{
       display:flex;
       align-items:center;
       justify-content:space-between;
-      gap:10px;
-      margin:4px 8px 6px;
+      gap: 10px;
+      margin-bottom: 8px;
     }
-    .label{ margin:0; font-size:13px; font-weight:900; line-height:1.1; }
+    .h{
+      font-size: 16px;
+      font-weight: 800;
+      margin: 0;
+      letter-spacing: .02em;
+    }
     .more{
-      font-size:11px; padding:5px 9px; border-radius:999px;
-      border:1px solid #e5e5e5; background:#fff; color:#111; text-decoration:none; line-height:1;
+      font-size: 12px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      text-decoration:none;
+      color:#4a2a7a;
+      background:#faf7ff;
       white-space:nowrap;
     }
 
-    /* 棚：4列固定（スマホで小さく見せる本命） */
-    .shelf{
+    /* 4冊×2段が基本（スマホで棚っぽく） */
+    .grid{
       display:grid;
-      grid-template-columns:repeat(4, 1fr);
-      gap:6px;
-      padding:0 8px 8px;
+      grid-template-columns: repeat(4, 1fr);
+      gap: var(--gap);
     }
-    .item{ display:flex; flex-direction:column; gap:4px; }
 
-    /* 表紙：縦長のまま。幅が減るので体感で小さくなる */
-    .cover{
-      border:1px solid #eee;
-      border-radius:10px;
+    .card{
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
       overflow:hidden;
-      background:#f3f3f3;
-      aspect-ratio: 2 / 3;
-      display:grid;
-      place-items:center;
+      background:#fff;
     }
-    .cover img{ width:100%; height:100%; object-fit:cover; display:block; }
 
-    /* Amazon：できるだけ薄く */
-    a.btn{
+    /* 書影（縦長） */
+    .cover{
+      aspect-ratio: 3 / 4;     /* 縦長を固定：棚の高さが読みやすい */
+      background:#f2f2f2;
       display:block;
       width:100%;
-      box-sizing:border-box;
-      text-align:center;
-      font-size:10px;
-      padding:5px 0;
-      border-radius:999px;
-      border:1px solid #e5e5e5;
-      background:#fff;
-      color:#111;
-      text-decoration:none;
-      line-height:1;
+      object-fit: cover;
     }
 
-    /* 小さい端末（SE級）は余白さらに削る */
-    @media (max-width:360px){
-      .bar{ margin:4px 6px 6px; }
-      .shelf{ padding:0 6px 8px; gap:5px; }
-      .label{ font-size:12.5px; }
-      .more{ font-size:10.5px; padding:5px 8px; }
-      a.btn{ font-size:9.6px; padding:5px 0; }
-      .cover{ border-radius:9px; }
+    /* 下のAmazonボタン（薄めで棚っぽく） */
+    .btnwrap{ padding: 6px 6px 8px; }
+    .btn{
+      display:block;
+      text-align:center;
+      padding: 7px 0;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      font-size: 12px;
+      text-decoration:none;
+      color:#333;
+      background:#fff;
+      user-select:none;
+    }
+
+    /* iPhoneの細い画面でも4列を維持しつつ、ギリ読める最小化 */
+    @media (max-width: 390px){
+      :root{ --gap: 8px; }
+      .wrap{ padding: 8px 10px 10px; }
+      .btn{ font-size: 11px; }
     }
   </style>
 </head>
 <body>
-  <div class="bar">
-    <p class="label">ラノベ新刊一覧555（テスト中）</p>
-    <a class="more" href="https://mozu.hateblo.jp/new-lightnovels" target="_blank" rel="noopener">もっと見る</a>
+  <div class="wrap">
+    <div class="topbar">
+      <h2 class="h" id="title">ラノベ新刊一覧</h2>
+      <a class="more" id="moreLink" href="https://mozu.hateblo.jp/new-lightnovels">もっと見る</a>
+    </div>
+
+    <div class="grid" id="grid"></div>
   </div>
 
-  <div class="shelf" id="shelf"></div>
-
 <script>
-  const AMAZON_TAG = "mozublo-22";
-  function amazonUrlFromIsbn(isbn) {
-    const q = encodeURIComponent(isbn);
-    return `https://www.amazon.co.jp/s?k=${q}&tag=${encodeURIComponent(AMAZON_TAG)}`;
+  // GitHub Pages同一オリジンのJSONを読む（CORS問題なし）
+  const DATA_URL = "./data/books.json";
+
+  const grid = document.getElementById("grid");
+
+  function escapeHtml(s){
+    return String(s ?? "").replace(/[&<>"']/g, m => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[m]));
   }
 
-  // 8冊固定（4×2）
-  const items = [
-    { isbn:"9784040000001", cover:"https://placehold.co/600x900?text=1" },
-    { isbn:"9784040000002", cover:"https://placehold.co/600x900?text=2" },
-    { isbn:"9784040000003", cover:"https://placehold.co/600x900?text=3" },
-    { isbn:"9784040000004", cover:"https://placehold.co/600x900?text=4" },
-    { isbn:"9784040000005", cover:"https://placehold.co/600x900?text=5" },
-    { isbn:"9784040000006", cover:"https://placehold.co/600x900?text=6" },
-    { isbn:"9784040000007", cover:"https://placehold.co/600x900?text=7" },
-    { isbn:"9784040000008", cover:"https://placehold.co/600x900?text=8" }
-  ];
+  async function main(){
+    const res = await fetch(DATA_URL + "?v=" + Date.now(), { cache:"no-store" });
+    const data = await res.json();
 
-  const shelf = document.getElementById("shelf");
-  items.forEach(x => {
-    const el = document.createElement("div");
-    el.className = "item";
-    el.innerHTML = `
-      <div class="cover"><img src="${x.cover}" alt=""></div>
-      <a class="btn" href="${amazonUrlFromIsbn(x.isbn)}" target="_blank" rel="nofollow noopener">Amazon</a>
-    `;
-    shelf.appendChild(el);
+    // 8冊固定（4×2）
+    const items = (data.items || []).slice(0, 8);
+
+    grid.innerHTML = items.map(it => {
+      const title = escapeHtml(it.title);
+      const cover = it.cover || "";
+      const amazon = it.amazon || "#";
+
+      return `
+        <div class="card">
+          <a href="${amazon}" target="_blank" rel="nofollow noopener">
+            <img class="cover" src="${cover}" alt="${title}">
+          </a>
+          <div class="btnwrap">
+            <a class="btn" href="${amazon}" target="_blank" rel="nofollow noopener">Amazon</a>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  main().catch(err => {
+    grid.innerHTML = `<div style="color:#b00;font-size:12px;">読み込みエラー：${escapeHtml(err.message)}</div>`;
   });
 </script>
 </body>
