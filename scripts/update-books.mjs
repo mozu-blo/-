@@ -205,16 +205,75 @@ function inferIsbnColumn(header, rows){
   return best;
 }
 
-function extractIsbnsFromTrcText(text, labels){
+function inferPubdateColumn(header, rows){
+  const h = header.map(x => normStr(x));
+  // ヘッダにありがちな語を優先
+  const keys = ["発売日","発行日","配本日","刊行日","発売","発行","刊行"];
+  let idx = h.findIndex(x => keys.some(k => x.includes(k)));
+  if(idx !== -1) return idx;
+
+  // データから日付っぽい値が多い列を採用
+  const sample = rows.slice(0, 200);
+  if(sample.length === 0) return -1;
+
+  const cols = header.length;
+  const counts = Array(cols).fill(0);
+
+  for(const r of sample){
+    for(let c=0;c<cols;c++){
+      const v = formatPubdateMin(r[c]);
+      if(v) counts[c] += 1;
+    }
+  }
+
+  let best = -1;
+  let bestCount = 0;
+  for(let c=0;c<cols;c++){
+    if(counts[c] > bestCount){
+      bestCount = counts[c];
+      best = c;
+    }
+  }
+
+  if(bestCount < 3) return -1;
+  return best;
+}
+
+function formatPubdateMin(raw){
+  if(!raw) return null;
+  const t = String(raw).trim();
+  if(!t) return null;
+
+  if(/^\d{8}$/.test(t)){
+    return `${t.slice(0,4)}/${t.slice(4,6)}/${t.slice(6,8)}`;
+  }
+  const m = t.match(/^(\d{4})[\/\-\.年](\d{1,2})[\/\-\.月](\d{1,2})/);
+  if(m){
+    const y=m[1], mm=m[2].padStart(2,"0"), dd=m[3].padStart(2,"0");
+    return `${y}/${mm}/${dd}`;
+  }
+  const m2 = t.match(/^(\d{4})[\/\-\.年](\d{1,2})/);
+  if(m2){
+    const y=m2[1], mm=m2[2].padStart(2,"0");
+    return `${y}/${mm}`;
+  }
+  return (t.length <= 10) ? t : null;
+}
+
+function extractIsbnsAndPubdateFromTrcText(text, labels){
   const lines = splitLines(text);
-  if(lines.length === 0) return [];
+  if(lines.length === 0) return { isbns: [], pubdateByIsbn: new Map() };
 
   const { header, rows } = parseTable(lines);
 
   const isbnCol = inferIsbnColumn(header, rows);
   if(isbnCol === -1) console.log("WARN: ISBN column not inferred");
 
+  const pubCol = inferPubdateColumn(header, rows);
+  if(pubCol === -1) console.log("WARN: pubdate column not inferred");
+
   const isbns = [];
+  const pubdateByIsbn = new Map();
 
   for(const r of rows){
     const joined = r.join("\t");
@@ -228,10 +287,31 @@ function extractIsbnsFromTrcText(text, labels){
     if(!isbn){
       isbn = extractIsbnFromTextLine(joined);
     }
-    if(isbn) isbns.push(isbn);
+    if(!isbn) continue;
+
+    isbns.push(isbn);
+
+    // 発売日（推定列が取れたらそこ、取れないなら行から拾う）
+    let pd = null;
+    if(pubCol !== -1){
+      pd = formatPubdateMin(r[pubCol]);
+    }
+    if(!pd){
+      // 行内に日付っぽいものがあれば拾う（保険）
+      // まず 8桁
+      const m8 = joined.match(/\b(\d{8})\b/);
+      if(m8) pd = formatPubdateMin(m8[1]);
+      if(!pd){
+        const mYmd = joined.match(/(\d{4})[\/\-\.年](\d{1,2})[\/\-\.月](\d{1,2})/);
+        if(mYmd) pd = formatPubdateMin(mYmd[0]);
+      }
+    }
+    if(pd && !pubdateByIsbn.has(isbn)){
+      pubdateByIsbn.set(isbn, pd);
+    }
   }
 
-  return uniq(isbns);
+  return { isbns: uniq(isbns), pubdateByIsbn };
 }
 
 // ---------- openBD ----------
@@ -259,41 +339,22 @@ function pickTitle(entry){
   return "";
 }
 
-function formatPubdateMin(raw){
-  if(!raw) return null;
-  const t = String(raw).trim();
-
-  if(/^\d{8}$/.test(t)){
-    return `${t.slice(0,4)}/${t.slice(4,6)}/${t.slice(6,8)}`;
-  }
-  const m = t.match(/^(\d{4})[\/\-\.年](\d{1,2})[\/\-\.月](\d{1,2})/);
-  if(m){
-    const y=m[1], mm=m[2].padStart(2,"0"), dd=m[3].padStart(2,"0");
-    return `${y}/${mm}/${dd}`;
-  }
-  const m2 = t.match(/^(\d{4})[\/\-\.年](\d{1,2})/);
-  if(m2){
-    const y=m2[1], mm=m2[2].padStart(2,"0");
-    return `${y}/${mm}`;
-  }
-  return (t.length <= 10) ? t : null;
-}
-
-function pickPubdate(entry){
+function pickPubdateFromOpenbd(entry){
   const s = entry?.summary || {};
-  // openBDのsummary.pubdateを優先
   const raw = s.pubdate ?? "";
   return formatPubdateMin(raw);
 }
 
-function pick(entry, fallbackIsbn){
+function pick(entry, fallbackIsbn, trcPubdate){
   if(!entry) return null;
 
   const s = entry.summary || {};
   const isbn = normIsbn(s.isbn || fallbackIsbn);
   const title = pickTitle(entry);
   const cover = pickCover(entry);
-  const pubdate = pickPubdate(entry);
+
+  // ★発売日：TRC優先 → openBD補助
+  const pubdate = trcPubdate ?? pickPubdateFromOpenbd(entry) ?? null;
 
   if(!isbn || !title) return null;
 
@@ -301,7 +362,7 @@ function pick(entry, fallbackIsbn){
     isbn,
     title,
     cover: cover ?? null,
-    pubdate: pubdate ?? null,
+    pubdate,
     amazon: amazonUrlFromIsbn(isbn),
   };
 }
@@ -361,9 +422,23 @@ async function loadExistingItems(){
 }
 
 function mergeRocketPencil(newItems, oldItems, limit = 8){
+  // 既存の情報で補完（新しい方が欠けてる時だけ）
+  const oldByIsbn = new Map(oldItems.map(x => [normIsbn(x.isbn), x]));
+  const patchedNew = newItems.map(it => {
+    const k = normIsbn(it?.isbn);
+    const old = oldByIsbn.get(k);
+    if(!old) return it;
+    return {
+      ...it,
+      cover: it.cover ?? old.cover ?? null,
+      pubdate: it.pubdate ?? old.pubdate ?? null,
+      amazon: it.amazon || old.amazon || (k ? amazonUrlFromIsbn(k) : "#"),
+    };
+  });
+
   const seen = new Set();
   const merged = [];
-  for(const it of [...newItems, ...oldItems]){
+  for(const it of [...patchedNew, ...oldItems]){
     const k = normIsbn(it?.isbn);
     if(!k || seen.has(k)) continue;
     seen.add(k);
@@ -385,7 +460,7 @@ async function main(){
   await fetchBinToFile(zipUrl, tmpZip);
   const trcText = await unzipPickTextFile(tmpZip);
 
-  const isbnsAll = extractIsbnsFromTrcText(trcText, labels);
+  const { isbns: isbnsAll, pubdateByIsbn } = extractIsbnsAndPubdateFromTrcText(trcText, labels);
   const isbns = isbnsAll.slice(0, TAKE_ISBNS);
 
   if(isbns.length === 0){
@@ -403,7 +478,9 @@ async function main(){
 
   const itemsTodayAll = [];
   for(let i=0;i<openbd.length;i++){
-    const b = pick(openbd[i], isbns[i]);
+    const isbn = isbns[i];
+    const trcPd = pubdateByIsbn.get(isbn) ?? null;
+    const b = pick(openbd[i], isbn, trcPd);
     if(b) itemsTodayAll.push(b);
   }
 
