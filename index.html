@@ -3,48 +3,74 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ラノベ新刊（テスト）</title>
+  <title>ラノベ新刊棚（テスト）</title>
   <style>
-    body { font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; margin: 0; background:#fafafa; }
-    .wrap { padding: 12px; }
-    .topbar { display:flex; gap:10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 10px; }
-    .h { font-size: 16px; font-weight: 800; margin: 0; }
-    .note { font-size: 12px; opacity: .75; margin: 0; }
+    /* 余白極小で「棚」を1画面に寄せる */
+    html, body { margin: 0; padding: 0; background:#fff; }
+    body { font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
 
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-    .card { border: 1px solid #e2e2e2; border-radius: 12px; overflow: hidden; background: #fff; display: flex; flex-direction: column; }
-    .cover { background: #f2f2f2; aspect-ratio: 1 / 1; display: grid; place-items: center; }
-    .cover img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .wrap { padding: 10px 10px 12px; }
+    .bar { display:flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 0 0 8px; }
+    .bar h1 { font-size: 15px; margin: 0; font-weight: 900; }
+    .bar button {
+      font-size: 12px; border: 1px solid #e5e5e5; background:#fff; padding: 6px 10px;
+      border-radius: 999px; cursor: pointer;
+    }
 
-    .meta { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
-    .title { font-size: 14px; line-height: 1.35; margin: 0; font-weight: 800; }
-    .sub { font-size: 12px; opacity: .8; display: flex; gap: 6px; flex-wrap: wrap; }
-    .sep { opacity: .45; }
+    /* 棚：3列固定。段数は表示件数で決まる */
+    .shelf {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
 
-    .links { margin-top: 2px; display:flex; gap:10px; flex-wrap: wrap; }
-    .btn { display: inline-block; font-size: 12px; text-decoration: none; border: 1px solid #e2e2e2; padding: 7px 10px; border-radius: 10px; }
-    .btn:active { transform: translateY(1px); }
+    /* 表紙＋小さなボタンだけ */
+    .item { display:flex; flex-direction: column; gap: 6px; }
+    .cover {
+      border: 1px solid #eee;
+      border-radius: 10px;
+      overflow: hidden;
+      background:#f6f6f6;
+      aspect-ratio: 2 / 3; /* 縦長表紙 */
+      display:grid;
+      place-items:center;
+    }
+    .cover img { width: 100%; height: 100%; object-fit: cover; display:block; }
 
-    /* iframe内での余白が見えるように */
-    .foot { margin-top: 14px; font-size: 12px; opacity:.7; }
+    .btn {
+      display:block;
+      text-align:center;
+      font-size: 12px;
+      text-decoration:none;
+      border: 1px solid #e5e5e5;
+      border-radius: 10px;
+      padding: 6px 0;
+      line-height: 1;
+    }
+
+    /* タイトルは棚では無し（必要なら後で1行だけ追加できる） */
+
+    /* iPhone SE級でも詰まりすぎないよう微調整 */
+    @media (max-width: 360px) {
+      .wrap { padding: 8px; }
+      .shelf { gap: 6px; }
+      .btn { font-size: 11px; padding: 6px 0; }
+      .bar h1 { font-size: 14px; }
+    }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="topbar">
-      <h1 class="h">ラノベ新刊一覧（テスト）</h1>
-      <p class="note">※ダミーデータ。表示・スクロール確認用。</p>
+    <div class="bar">
+      <h1>ラノベ新刊一覧（テスト中）</h1>
+      <button id="moreBtn" type="button">もっと見る</button>
     </div>
 
-    <div class="grid" id="grid"></div>
-
-    <div class="foot">
-      <p>表示が崩れる/スクロールが変などあれば教えて。ここがOKになったら次にopenBD連携へ。</p>
-    </div>
+    <div class="shelf" id="shelf"></div>
   </div>
 
 <script>
-  // ★あなたのAmazonアソシエイトタグに置き換え（例: "yourtag-22"）
+  // ★あなたのAmazon追跡ID（例: "mozu-22"）に変更
   const AMAZON_TAG = "mozublo-22";
 
   function amazonUrlFromIsbn(isbn) {
@@ -52,57 +78,50 @@
     return `https://www.amazon.co.jp/s?k=${q}&tag=${encodeURIComponent(AMAZON_TAG)}`;
   }
 
-  // ダミー：書影は見た目確認用（外部URLの画像）
-  // 本番では openBDのcover URLに置き換える
-  const dummy = [
-    { title:"ダミー新刊1：タイトルが長い場合の折り返し確認テスト", author:"著者名A", date:"2026-01-15", publisher:"出版社A", isbn:"9784040000001", cover:"https://placehold.co/600x600?text=Cover+1" },
-    { title:"ダミー新刊2", author:"著者名B", date:"2026-01-15", publisher:"出版社B", isbn:"9784040000002", cover:"https://placehold.co/600x600?text=Cover+2" },
-    { title:"ダミー新刊3", author:"著者名C", date:"2026-01-16", publisher:"出版社C", isbn:"9784040000003", cover:"https://placehold.co/600x600?text=Cover+3" },
-    { title:"ダミー新刊4", author:"著者名D", date:"2026-01-16", publisher:"出版社D", isbn:"9784040000004", cover:"https://placehold.co/600x600?text=Cover+4" },
-    { title:"ダミー新刊5", author:"著者名E", date:"2026-01-17", publisher:"出版社E", isbn:"9784040000005", cover:"https://placehold.co/600x600?text=Cover+5" },
-    { title:"ダミー新刊6", author:"著者名F", date:"2026-01-17", publisher:"出版社F", isbn:"9784040000006", cover:"https://placehold.co/600x600?text=Cover+6" },
-    { title:"ダミー新刊7", author:"著者名G", date:"2026-01-18", publisher:"出版社G", isbn:"9784040000007", cover:"https://placehold.co/600x600?text=Cover+7" },
-    { title:"ダミー新刊8", author:"著者名H", date:"2026-01-18", publisher:"出版社H", isbn:"9784040000008", cover:"https://placehold.co/600x600?text=Cover+8" },
-    { title:"ダミー新刊9", author:"著者名I", date:"2026-01-19", publisher:"出版社I", isbn:"9784040000009", cover:"https://placehold.co/600x600?text=Cover+9" },
-    { title:"ダミー新刊10", author:"著者名J", date:"2026-01-19", publisher:"出版社J", isbn:"9784040000010", cover:"https://placehold.co/600x600?text=Cover+10" },
+  // ダミー（本番はopenBDで cover/title/author/date/isbn を埋める）
+  const items = [
+    { isbn:"9784040000001", cover:"https://placehold.co/600x900?text=1" },
+    { isbn:"9784040000002", cover:"https://placehold.co/600x900?text=2" },
+    { isbn:"9784040000003", cover:"https://placehold.co/600x900?text=3" },
+    { isbn:"9784040000004", cover:"https://placehold.co/600x900?text=4" },
+    { isbn:"9784040000005", cover:"https://placehold.co/600x900?text=5" },
+    { isbn:"9784040000006", cover:"https://placehold.co/600x900?text=6" },
+    { isbn:"9784040000007", cover:"https://placehold.co/600x900?text=7" },
+    { isbn:"9784040000008", cover:"https://placehold.co/600x900?text=8" },
+    { isbn:"9784040000009", cover:"https://placehold.co/600x900?text=9" },
+    { isbn:"9784040000010", cover:"https://placehold.co/600x900?text=10" },
   ];
 
-  function escapeHtml(str) {
-    return String(str)
-      .replaceAll("&","&amp;")
-      .replaceAll("<","&lt;")
-      .replaceAll(">","&gt;")
-      .replaceAll('"',"&quot;")
-      .replaceAll("'","&#039;");
+  const shelf = document.getElementById("shelf");
+  const moreBtn = document.getElementById("moreBtn");
+
+  let expanded = false;
+
+  function render() {
+    shelf.innerHTML = "";
+    const visibleCount = expanded ? 9 : 6; // 2段(6冊)→最大3段(9冊)
+    const show = items.slice(0, visibleCount);
+
+    show.forEach(x => {
+      const aUrl = amazonUrlFromIsbn(x.isbn);
+      const el = document.createElement("div");
+      el.className = "item";
+      el.innerHTML = `
+        <div class="cover"><img src="${x.cover}" alt=""></div>
+        <a class="btn" href="${aUrl}" target="_blank" rel="nofollow noopener">Amazon</a>
+      `;
+      shelf.appendChild(el);
+    });
+
+    moreBtn.textContent = expanded ? "たたむ" : "もっと見る";
   }
 
-  function makeCard(x) {
-    const aUrl = amazonUrlFromIsbn(x.isbn);
-    const el = document.createElement("article");
-    el.className = "card";
-    el.innerHTML = `
-      <div class="cover">
-        <img src="${escapeHtml(x.cover)}" alt="${escapeHtml(x.title)}">
-      </div>
-      <div class="meta">
-        <h3 class="title">${escapeHtml(x.title)}</h3>
-        <div class="sub">
-          <span>${escapeHtml(x.author)}</span>
-          <span class="sep">/</span>
-          <span>${escapeHtml(x.date)}</span>
-          <span class="sep">/</span>
-          <span>${escapeHtml(x.publisher)}</span>
-        </div>
-        <div class="links">
-          <a class="btn" href="${aUrl}" target="_blank" rel="nofollow noopener">Amazonで見る</a>
-        </div>
-      </div>
-    `;
-    return el;
-  }
+  moreBtn.addEventListener("click", () => {
+    expanded = !expanded;
+    render();
+  });
 
-  const grid = document.getElementById("grid");
-  dummy.forEach(x => grid.appendChild(makeCard(x)));
+  render();
 </script>
 </body>
 </html>
