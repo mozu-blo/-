@@ -4,34 +4,32 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ラノベ新刊棚</title>
-
   <style>
     :root{
       --gap: 10px;
       --radius: 14px;
-      --border: rgba(0,0,0,.08);
-      --bg: #fff;
-      --card: #fff;
+      --border: #e8e8e8;
       --text: #111;
       --muted: #666;
+      --bg: #fff;
+      --cardbg: #fbfbfd;
     }
-
     body{
       margin:0;
       background:var(--bg);
       color:var(--text);
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
     }
-    .wrap{ padding: 10px 12px 12px; }
+    .wrap{ padding: 12px 12px 14px; max-width: 1000px; margin: 0 auto; }
 
-    .topbar{ margin-bottom: 8px; }
     .h{
       font-size: 18px;
       font-weight: 900;
-      margin: 0;
+      margin: 6px 2px 10px;
       letter-spacing: .02em;
     }
 
+    /* 4×2 */
     .grid{
       display:grid;
       grid-template-columns: repeat(4, 1fr);
@@ -42,58 +40,31 @@
       border: 1px solid var(--border);
       border-radius: var(--radius);
       overflow:hidden;
-      background: var(--card);
-      box-shadow: 0 8px 24px rgba(0,0,0,.06);
+      background: var(--cardbg);
+      box-shadow: 0 1px 0 rgba(0,0,0,.02);
     }
 
-    .coverWrap{
-      position:relative;
-      width:100%;
-      aspect-ratio: 3/4;
-      background:#f2f2f2;
-      overflow:hidden;
+    .coverwrap{
+      position: relative;
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      background: #f2f2f2;
+      display:block;
     }
 
-    img.cover{
-      width:100%;
-      height:100%;
+    .cover{
+      width: 100%;
+      height: 100%;
+      display:block;
       object-fit: cover;
-      display:block;
-      background:#f2f2f2;
+      background: #f2f2f2;
     }
 
-    /* NO IMAGE（中央固定） */
-    .noimg{
-      position:absolute;
-      inset:0;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      text-align:center;
-      user-select:none;
-      color: rgba(0,0,0,.45);
-      font-weight: 900;
-      letter-spacing:.08em;
-      font-size: 12px;
-      background:
-        radial-gradient(120px 120px at 20% 20%, rgba(0,0,0,.06), transparent 60%),
-        radial-gradient(120px 120px at 80% 30%, rgba(0,0,0,.05), transparent 60%),
-        linear-gradient(180deg, #f7f7fb, #f1f1f6);
-    }
-    .noimg small{
-      display:block;
-      margin-top:6px;
-      font-weight: 700;
-      font-size: 10px;
-      letter-spacing:.04em;
-      opacity:.95;
-    }
-
-    .btnwrap{ padding: 8px 8px 10px; }
+    .btnwrap{ padding: 8px 8px 10px; background:#fff; }
     .btn{
       display:block;
       text-align:center;
-      padding: 8px 0;
+      padding: 9px 0;
       border-radius: 999px;
       border: 1px solid var(--border);
       font-size: 12px;
@@ -102,31 +73,30 @@
       background:#fff;
       user-select:none;
     }
+    .btn.disabled{
+      opacity: .45;
+      pointer-events: none;
+    }
 
     .note{
-      margin-top: 8px;
-      font-size: 11px;
+      margin-top: 10px;
+      font-size: 12px;
       color: var(--muted);
-      line-height: 1.4;
+      line-height: 1.55;
     }
 
     @media (max-width: 390px){
       :root{ --gap: 8px; }
-      .wrap{ padding: 8px 10px 10px; }
+      .wrap{ padding: 10px 10px 12px; }
       .btn{ font-size: 11px; }
-      .h{ font-size: 17px; }
     }
   </style>
 </head>
-
 <body>
   <div class="wrap">
-    <div class="topbar">
-      <h2 class="h">ラノベ新刊一覧</h2>
-    </div>
-
+    <div class="h" id="title">ラノベ新刊一覧</div>
     <div class="grid" id="grid"></div>
-    <div class="note" id="note"></div>
+    <div class="note" id="note" style="display:none;"></div>
   </div>
 
 <script>
@@ -140,66 +110,119 @@
     }[m]));
   }
 
-  function noImageHtml(){
-    return `<div class="noimg">NO IMAGE<small>data pending</small></div>`;
+  // ダミーSVG（NO IMAGE / DATA PENDING を縦に積む）
+  function placeholderSvgDataUri(line1, line2){
+    const L1 = escapeHtml(line1);
+    const L2 = escapeHtml(line2);
+
+    const svg =
+`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800" viewBox="0 0 600 800">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f5f6fa"/>
+      <stop offset="1" stop-color="#eef0f7"/>
+    </linearGradient>
+    <pattern id="p" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M0 24 L24 0" stroke="#e6e8f2" stroke-width="2"/>
+      <path d="M-12 24 L12 0" stroke="#e6e8f2" stroke-width="2"/>
+      <path d="M12 24 L36 0" stroke="#e6e8f2" stroke-width="2"/>
+    </pattern>
+  </defs>
+
+  <rect x="0" y="0" width="600" height="800" fill="url(#g)"/>
+  <rect x="0" y="0" width="600" height="800" fill="url(#p)" opacity="0.35"/>
+
+  <g opacity="0.65" transform="translate(0,0)">
+    <rect x="150" y="210" width="300" height="220" rx="18" fill="none" stroke="#a8adbf" stroke-width="10"/>
+    <rect x="190" y="245" width="220" height="150" rx="14" fill="none" stroke="#a8adbf" stroke-width="8"/>
+    <circle cx="240" cy="285" r="14" fill="#a8adbf"/>
+  </g>
+
+  <!-- text (vertical stacked) -->
+  <g font-family="system-ui,-apple-system,Segoe UI,Roboto,Noto Sans JP,sans-serif" text-anchor="middle">
+    <text x="300" y="520" font-size="54" font-weight="900" fill="#6b6f80" letter-spacing="1">
+      ${L1}
+    </text>
+    <text x="300" y="585" font-size="28" font-weight="700" fill="#7b7f90" letter-spacing="1">
+      ${L2}
+    </text>
+  </g>
+</svg>`;
+
+    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
   }
 
-  function cardHtml(it){
-    const title = escapeHtml(it?.title || "");
-    const amazon = it?.amazon || "#";
-    const cover = it?.cover || "";
+  const PLACEHOLDER_NOIMAGE = placeholderSvgDataUri("NO IMAGE", "data pending");
 
-    return `
-      <div class="card">
-        <a href="${escapeHtml(amazon)}" target="_blank" rel="nofollow noopener"
-           style="display:block;text-decoration:none;color:inherit;">
-          <div class="coverWrap">
-            ${cover ? `<img class="cover" src="${escapeHtml(cover)}" alt="${title}" loading="lazy">` : noImageHtml()}
-          </div>
-        </a>
-        <div class="btnwrap">
-          ${amazon === "#" ? `<div class="btn" style="opacity:.35;">Amazon</div>`
-                           : `<a class="btn" href="${escapeHtml(amazon)}" target="_blank" rel="nofollow noopener">Amazon</a>`}
-        </div>
-      </div>
-    `;
-  }
-
-  function attachImgFallback(){
-    document.querySelectorAll("img.cover").forEach(img => {
-      img.addEventListener("error", () => {
-        const wrap = img.closest(".coverWrap");
-        if(!wrap) return;
-        img.remove();
-        if(!wrap.querySelector(".noimg")) wrap.insertAdjacentHTML("beforeend", noImageHtml());
-      }, { once:true });
-    });
-  }
-
-  async function main(){
-    const res = await fetch(DATA_URL + "?v=" + Date.now(), { cache:"no-store" });
-    const data = await res.json();
-
-    const items = Array.isArray(data?.items) ? data.items : [];
-    const filled = [];
-
-    // ★ここが白回避の本体：8枠固定、足りなければダミーで埋める
+  function renderCards(items, isPending){
+    // 8枚固定
+    const fixed = [];
     for(let i=0;i<8;i++){
-      filled.push(items[i] ?? { title:"", cover:"", amazon:"#"});
+      fixed.push(items[i] || null);
     }
 
-    grid.innerHTML = filled.map(cardHtml).join("");
-    attachImgFallback();
+    grid.innerHTML = fixed.map((it) => {
+      if(!it){
+        // data pending カード
+        return `
+          <div class="card">
+            <div class="coverwrap">
+              <img class="cover" src="${PLACEHOLDER_NOIMAGE}" alt="NO IMAGE data pending">
+            </div>
+            <div class="btnwrap">
+              <a class="btn disabled" href="#" tabindex="-1" aria-disabled="true">Amazon</a>
+            </div>
+          </div>
+        `;
+      }
 
-    if(items.length === 0){
+      const title = escapeHtml(it.title);
+      const amazon = it.amazon || "#";
+      const cover = it.cover ? it.cover : PLACEHOLDER_NOIMAGE;
+
+      return `
+        <div class="card">
+          <a class="coverwrap" href="${amazon}" target="_blank" rel="nofollow noopener">
+            <img class="cover"
+              src="${cover}"
+              alt="${title}"
+              loading="lazy"
+              referrerpolicy="no-referrer"
+              onerror="this.onerror=null; this.src='${PLACEHOLDER_NOIMAGE}';"
+            >
+          </a>
+          <div class="btnwrap">
+            <a class="btn" href="${amazon}" target="_blank" rel="nofollow noopener">Amazon</a>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    if(isPending){
+      note.style.display = "block";
       note.textContent = "現在、新刊データが0件です（次回更新で復帰する可能性があります）。";
     }else{
+      note.style.display = "none";
       note.textContent = "";
     }
   }
 
+  async function main(){
+    // キャッシュ破り
+    const res = await fetch(DATA_URL + "?v=" + Date.now(), { cache:"no-store" });
+    if(!res.ok) throw new Error("books.json の取得に失敗しました");
+    const data = await res.json();
+    const items = (data.items || []).slice(0, 8);
+
+    // items=0 でも真っ白にせず、8枚のダミーカードを出す
+    renderCards(items, items.length === 0);
+  }
+
   main().catch(err => {
-    grid.innerHTML = `<div style="color:#b00;font-size:12px;">読み込みエラー：${escapeHtml(err.message)}</div>`;
+    // 取得エラーでも真っ白にしない
+    renderCards([], true);
+    note.style.display = "block";
+    note.textContent = "読み込みエラー：" + (err && err.message ? err.message : "unknown");
   });
 </script>
 </body>
