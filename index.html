@@ -3,20 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ラノベ新刊一覧</title>
+  <title>ラノベ新刊棚</title>
 
   <style>
     :root{
       --gap: 10px;
       --radius: 14px;
-      --border: #e9e9e9;
+      --border: rgba(0,0,0,.08);
+      --bg: #fff;
+      --card: #fff;
       --text: #111;
       --muted: #666;
-      --bg: #fff;
-
-      --card-bg: #fff;
-      --ph-bg: #f3f3f3;
-      --ph-line: #e7e7e7;
     }
 
     body{
@@ -25,16 +22,9 @@
       color:var(--text);
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
     }
-
     .wrap{ padding: 10px 12px 12px; }
 
-    .topbar{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap: 10px;
-      margin-bottom: 10px;
-    }
+    .topbar{ margin-bottom: 8px; }
     .h{
       font-size: 18px;
       font-weight: 900;
@@ -42,7 +32,6 @@
       letter-spacing: .02em;
     }
 
-    /* 4冊×2段 */
     .grid{
       display:grid;
       grid-template-columns: repeat(4, 1fr);
@@ -53,28 +42,27 @@
       border: 1px solid var(--border);
       border-radius: var(--radius);
       overflow:hidden;
-      background: var(--card-bg);
-      box-shadow: 0 1px 0 rgba(0,0,0,.02);
+      background: var(--card);
+      box-shadow: 0 8px 24px rgba(0,0,0,.06);
     }
 
     .coverWrap{
-      position: relative;
-      width: 100%;
-      aspect-ratio: 3 / 4;
-      background: var(--ph-bg);
-      border-bottom: 1px solid var(--ph-line);
+      position:relative;
+      width:100%;
+      aspect-ratio: 3/4;
+      background:#f2f2f2;
+      overflow:hidden;
     }
 
-    /* 実画像 */
     img.cover{
       width:100%;
       height:100%;
       object-fit: cover;
       display:block;
-      background: var(--ph-bg);
+      background:#f2f2f2;
     }
 
-    /* ここがポイント：NO IMAGEは画像ではなく“中央固定のレイアウト” */
+    /* NO IMAGE（中央固定） */
     .noimg{
       position:absolute;
       inset:0;
@@ -82,65 +70,26 @@
       align-items:center;
       justify-content:center;
       text-align:center;
-      color:#7a7a7a;
       user-select:none;
-      padding: 10px;
+      color: rgba(0,0,0,.45);
+      font-weight: 900;
+      letter-spacing:.08em;
+      font-size: 12px;
       background:
-        linear-gradient(135deg, rgba(0,0,0,.04) 25%, transparent 25%) 0 0/18px 18px,
-        linear-gradient(225deg, rgba(0,0,0,.04) 25%, transparent 25%) 0 0/18px 18px,
-        linear-gradient(315deg, rgba(0,0,0,.04) 25%, transparent 25%) 0 0/18px 18px,
-        linear-gradient(45deg, rgba(0,0,0,.04) 25%, transparent 25%) 0 0/18px 18px,
-        var(--ph-bg);
+        radial-gradient(120px 120px at 20% 20%, rgba(0,0,0,.06), transparent 60%),
+        radial-gradient(120px 120px at 80% 30%, rgba(0,0,0,.05), transparent 60%),
+        linear-gradient(180deg, #f7f7fb, #f1f1f6);
     }
-    .noimgBox{
-      width: 100%;
-      max-width: 120px;           /* 小さすぎる画面でも収まる */
-      display:flex;
-      flex-direction:column;
-      align-items:center;
-      gap: 8px;
+    .noimg small{
+      display:block;
+      margin-top:6px;
+      font-weight: 700;
+      font-size: 10px;
+      letter-spacing:.04em;
       opacity:.95;
     }
-    .noimgIcon{
-      width: 64px;
-      height: 48px;
-      border: 2px solid #bdbdbd;
-      border-radius: 8px;
-      position: relative;
-      background: rgba(255,255,255,.35);
-    }
-    .noimgIcon:before,
-    .noimgIcon:after{
-      content:"";
-      position:absolute;
-      border: 2px solid #bdbdbd;
-      border-radius: 6px;
-      background: rgba(255,255,255,.25);
-    }
-    .noimgIcon:before{
-      width: 36px; height: 28px;
-      left: 6px; top: 8px;
-    }
-    .noimgIcon:after{
-      width: 36px; height: 28px;
-      right: 6px; top: 8px;
-      opacity:.85;
-    }
-    .noimgText{
-      font-weight: 900;
-      letter-spacing: .14em;
-      font-size: 12px;
-      line-height: 1.1;
-    }
-    .noimgSub{
-      font-weight: 700;
-      letter-spacing: .06em;
-      font-size: 10px;
-      color:#8a8a8a;
-    }
 
-    /* Amazonボタン */
-    .btnwrap{ padding: 7px 7px 9px; }
+    .btnwrap{ padding: 8px 8px 10px; }
     .btn{
       display:block;
       text-align:center;
@@ -154,12 +103,11 @@
       user-select:none;
     }
 
-    /* ローディング骨組み */
-    .skeleton{ animation: pulse 1.2s ease-in-out infinite; }
-    @keyframes pulse{
-      0%{ opacity: .65; }
-      50%{ opacity: .9; }
-      100%{ opacity: .65; }
+    .note{
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.4;
     }
 
     @media (max-width: 390px){
@@ -167,7 +115,6 @@
       .wrap{ padding: 8px 10px 10px; }
       .btn{ font-size: 11px; }
       .h{ font-size: 17px; }
-      .noimgIcon{ width: 58px; height: 44px; }
     }
   </style>
 </head>
@@ -179,11 +126,13 @@
     </div>
 
     <div class="grid" id="grid"></div>
+    <div class="note" id="note"></div>
   </div>
 
 <script>
   const DATA_URL = "./data/books.json";
   const grid = document.getElementById("grid");
+  const note = document.getElementById("note");
 
   function escapeHtml(s){
     return String(s ?? "").replace(/[&<>"']/g, m => ({
@@ -191,70 +140,62 @@
     }[m]));
   }
 
-  function skeleton8(){
-    const card = `
-      <div class="card skeleton">
-        <div class="coverWrap"></div>
-        <div class="btnwrap"><div class="btn" style="color:#aaa;">Amazon</div></div>
-      </div>`;
-    grid.innerHTML = card.repeat(8);
-  }
-
   function noImageHtml(){
-    return `
-      <div class="noimg">
-        <div class="noimgBox">
-          <div class="noimgIcon" aria-hidden="true"></div>
-          <div class="noimgText">NO&nbsp;IMAGE</div>
-          <div class="noimgSub">cover unavailable</div>
-        </div>
-      </div>
-    `;
+    return `<div class="noimg">NO IMAGE<small>data pending</small></div>`;
   }
 
   function cardHtml(it){
-    const title = escapeHtml(it.title || "");
-    const cover = it.cover || "";   // null/"" あり得る
-    const amazon = it.amazon || "#";
+    const title = escapeHtml(it?.title || "");
+    const amazon = it?.amazon || "#";
+    const cover = it?.cover || "";
 
     return `
       <div class="card">
         <a href="${escapeHtml(amazon)}" target="_blank" rel="nofollow noopener"
            style="display:block;text-decoration:none;color:inherit;">
           <div class="coverWrap">
-            ${cover ? `<img class="cover" src="${escapeHtml(cover)}" alt="${title}">` : noImageHtml()}
+            ${cover ? `<img class="cover" src="${escapeHtml(cover)}" alt="${title}" loading="lazy">` : noImageHtml()}
           </div>
         </a>
         <div class="btnwrap">
-          <a class="btn" href="${escapeHtml(amazon)}" target="_blank" rel="nofollow noopener">Amazon</a>
+          ${amazon === "#" ? `<div class="btn" style="opacity:.35;">Amazon</div>`
+                           : `<a class="btn" href="${escapeHtml(amazon)}" target="_blank" rel="nofollow noopener">Amazon</a>`}
         </div>
       </div>
     `;
   }
 
-  function attachImageFallback(){
+  function attachImgFallback(){
     document.querySelectorAll("img.cover").forEach(img => {
       img.addEventListener("error", () => {
         const wrap = img.closest(".coverWrap");
         if(!wrap) return;
         img.remove();
-        if(wrap.querySelector(".noimg")) return;
-        wrap.insertAdjacentHTML("beforeend", noImageHtml());
+        if(!wrap.querySelector(".noimg")) wrap.insertAdjacentHTML("beforeend", noImageHtml());
       }, { once:true });
     });
   }
 
   async function main(){
-    skeleton8();
-
     const res = await fetch(DATA_URL + "?v=" + Date.now(), { cache:"no-store" });
-    if(!res.ok) throw new Error(`books.json fetch failed: ${res.status}`);
-
     const data = await res.json();
-    const items = (data.items || []).slice(0, 8);
 
-    grid.innerHTML = items.map(cardHtml).join("");
-    attachImageFallback();
+    const items = Array.isArray(data?.items) ? data.items : [];
+    const filled = [];
+
+    // ★ここが白回避の本体：8枠固定、足りなければダミーで埋める
+    for(let i=0;i<8;i++){
+      filled.push(items[i] ?? { title:"", cover:"", amazon:"#"});
+    }
+
+    grid.innerHTML = filled.map(cardHtml).join("");
+    attachImgFallback();
+
+    if(items.length === 0){
+      note.textContent = "現在、新刊データが0件です（次回更新で復帰する可能性があります）。";
+    }else{
+      note.textContent = "";
+    }
   }
 
   main().catch(err => {
