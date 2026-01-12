@@ -3,17 +3,14 @@ name: update-books
 on:
   workflow_dispatch:
   schedule:
-    # 毎日 朝9時（JST）に実行
-    # GitHub Actions は UTC 基準なので 0:00 UTC = 9:00 JST
-    - cron: "*/5 * * * *"
+    - cron: "0 0 * * *"
+
+permissions:
+  contents: write
 
 jobs:
   update:
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: write   # ← これ超重要（自動commit用）
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
