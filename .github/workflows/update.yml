@@ -5,7 +5,7 @@ on:
   schedule:
     # 毎日 朝9時（JST）に実行
     # GitHub Actions は UTC 基準なので 0:00 UTC = 9:00 JST
-    - cron: "0 0 * * *"
+    - cron: "*/5 * * * *"
 
 jobs:
   update:
