@@ -3,7 +3,9 @@ name: update-books
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
+    # 毎日 朝9時（JST）
+  # GitHub Actions は UTC 基準（09:00 JST = 00:00 UTC）
+  - cron: "0 0 * * *"
 
 permissions:
   contents: write
