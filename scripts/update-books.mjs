@@ -4,11 +4,10 @@
 // → data/books.json更新（ロケットえんぴつ方式）
 // ※items=0 の日は books.json を更新しない（真っ白回避）
 //
-// A(最強ログ)：
-// ・TRC zip URL / ZIP内ファイル名
-// ・TRC 抽出ISBN数(whitelist一致) / 先頭ISBN / pubdate列推定結果
-// ・今日8件(ISBN) / 既存8件(ISBN) / merged8件(ISBN)
-// ・今日の“新規ISBN”件数（ロケットえんぴつが動く条件の可視化）
+// A+（最強ログ）
+// - TRCページ上のzipリンクを複数抽出して一覧表示
+// - ファイル名に含まれるYYYYMMDDで「最大」を自前で選ぶ（=最新）
+// - 選定結果/候補一覧/日付抽出結果をログに出す
 
 import fs from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -18,22 +17,41 @@ const execFileAsync = promisify(execFile);
 
 const TRC_PAGE = "https://www.trc.co.jp/trc_opendata/";
 const OPENBD = "https://api.openbd.jp/v1/get?isbn=";
+
 const AMAZON_TAG = "mozublo-22";
 
+// 取りに行く候補数（多めに取って whitelist で絞る）
 const TAKE_ISBNS = 1200;
+// openBDは一括に限界があるので分割（安全側）
 const OPENBD_CHUNK = 100;
 
+// whitelist
 const WHITELIST_PATH = "data/whitelist.json";
+// output
 const BOOKS_PATH = "data/books.json";
 
-const NDL_THUMB = (isbn13) => `https://ndlsearch.ndl.go.jp/thumbnail/${isbn13}.jpg`;
-const OL_THUMB = (isbn13) => `https://covers.openlibrary.org/b/isbn/${isbn13}-L.jpg?default=false`;
+// 書影フォールバック（実在チェックして採用）
+const NDL_THUMB = (isbn13) => `https://ndlsearch.ndl.go.jp/thumbnail/${isbn13}.jpg`; // 404あり
+const OL_THUMB = (isbn13) => `https://covers.openlibrary.org/b/isbn/${isbn13}-L.jpg?default=false`; // 404あり
+
+// A+：TRCページ上のzip候補を何件表示するか（ログ用）
+const TRC_ZIP_LOG_LIMIT = 12;
 
 // ---------- utils ----------
 function uniq(arr){ return [...new Set(arr)]; }
-function normStr(s){ return String(s ?? "").normalize("NFKC").trim(); }
-function normIsbn(s){ return normStr(s).replace(/[^0-9Xx]/g,"").toUpperCase(); }
-function isIsbn13Like(s){ return /^97[89]\d{10}$/.test(normIsbn(s)); }
+
+function normStr(s){
+  return String(s ?? "").normalize("NFKC").trim();
+}
+
+function normIsbn(s){
+  return normStr(s).replace(/[^0-9Xx]/g,"").toUpperCase();
+}
+
+function isIsbn13Like(s){
+  const t = normIsbn(s);
+  return /^97[89]\d{10}$/.test(t);
+}
 
 function extractIsbnFromTextLine(line){
   const m = normStr(line).match(/97[89]\d{10}/);
@@ -49,34 +67,36 @@ async function fetchText(url){
   if(!res.ok) throw new Error(`fetch failed ${res.status} ${url}`);
   return await res.text();
 }
+
 async function fetchJson(url){
   const res = await fetch(url, { headers: { "user-agent": "mozublo-bot/1.0" }});
   if(!res.ok) throw new Error(`fetch failed ${res.status} ${url}`);
   return await res.json();
 }
+
 async function fetchBinToFile(url, filepath){
   const res = await fetch(url, { headers: { "user-agent": "mozublo-bot/1.0" }});
   if(!res.ok) throw new Error(`fetch failed ${res.status} ${url}`);
   const buf = Buffer.from(await res.arrayBuffer());
   await fs.writeFile(filepath, buf);
 }
-async function exists(path){ return await fs.access(path).then(()=>true).catch(()=>false); }
+
+async function exists(path){
+  return await fs.access(path).then(()=>true).catch(()=>false);
+}
 
 // timeout付きfetch（画像存在チェック用）
 async function fetchWithTimeout(url, opts = {}, ms = 4000){
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), ms);
   try{
-    const res = await fetch(url, {
-      ...opts,
-      signal: ac.signal,
-      headers: { "user-agent": "mozublo-bot/1.0", ...(opts.headers||{}) }
-    });
+    const res = await fetch(url, { ...opts, signal: ac.signal, headers: { "user-agent": "mozublo-bot/1.0", ...(opts.headers||{}) } });
     return res;
   } finally {
     clearTimeout(t);
   }
 }
+
 async function probeImage(url){
   try{
     const res = await fetchWithTimeout(url, { method: "GET" }, 5000);
@@ -84,15 +104,71 @@ async function probeImage(url){
     const ct = (res.headers.get("content-type") || "").toLowerCase();
     if(ct && !ct.startsWith("image/")) return null;
     return url;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
-// ---------- TRC ----------
+// ---------- TRC (A+ 強化) ----------
+function extractZipLinksFromHtml(html){
+  // href="...zip" を全部拾う。相対/絶対どっちもOK
+  const out = [];
+  const re = /href="([^"]+?\.zip)"/gi;
+  let m;
+  while((m = re.exec(html)) !== null){
+    out.push(m[1]);
+  }
+  return uniq(out);
+}
+
+function parseYyyymmddFromZipName(urlStr){
+  // 例: TRCOpenBibData_20260110.zip から 20260110 を抜く
+  const s = String(urlStr);
+  const m = s.match(/(\d{8})(?=\.zip\b)/);
+  return m ? m[1] : "";
+}
+
+function yyyymmddToNumber(ymd){
+  if(!/^\d{8}$/.test(ymd)) return -1;
+  return Number(ymd);
+}
+
 async function findLatestTrcZipUrl(){
   const html = await fetchText(TRC_PAGE);
-  const m = html.match(/href="([^"]+\.zip)"/i);
-  if(!m) throw new Error("TRC zip link not found");
-  return new URL(m[1], TRC_PAGE).toString();
+
+  const rawLinks = extractZipLinksFromHtml(html);
+  if(rawLinks.length === 0) throw new Error("TRC zip link not found");
+
+  // TRC_PAGE を基準に絶対URLへ
+  const abs = rawLinks.map(href => new URL(href, TRC_PAGE).toString());
+
+  // 日付推定（YYYYMMDD）を付与して並べる
+  const withDate = abs.map(u => ({
+    url: u,
+    ymd: parseYyyymmddFromZipName(u),
+    n: yyyymmddToNumber(parseYyyymmddFromZipName(u)),
+  }));
+
+  // ログ：候補一覧（最大TRC_ZIP_LOG_LIMIT件）
+  const topForLog = withDate.slice(0, TRC_ZIP_LOG_LIMIT);
+  console.log("TRC zip candidates (first " + topForLog.length + "):");
+  for(const x of topForLog){
+    console.log(" -", x.ymd || "--------", x.url);
+  }
+
+  // 日付が取れるやつだけで最大を選ぶ。取れないURLしかない場合は「先頭」を使う。
+  const dated = withDate.filter(x => x.n !== -1).sort((a,b) => b.n - a.n);
+
+  if(dated.length > 0){
+    const picked = dated[0];
+    console.log("TRC latest zip picked by max yyyymmdd:", picked.ymd, picked.url);
+    return picked.url;
+  }
+
+  // fallback
+  console.log("WARN: could not parse yyyymmdd from zip names -> fallback to first href");
+  console.log("TRC latest zip picked by fallback:", withDate[0].url);
+  return withDate[0].url;
 }
 
 async function unzipPickTextFile(zipPath){
@@ -105,6 +181,7 @@ async function unzipPickTextFile(zipPath){
     names[0];
 
   if(!pick) throw new Error("No file in zip");
+
   console.log("ZIP CONTENTS picked:", pick);
 
   const { stdout } = await execFileAsync("unzip", ["-p", zipPath, pick], {
@@ -124,13 +201,14 @@ async function loadWhitelistLabels(){
     return [];
   }
 }
+
 function lineHasAnyLabel(line, labels){
   if(labels.length === 0) return false;
   const t = normStr(line);
   return labels.some(lb => lb && t.includes(lb));
 }
 
-// ---------- parsing ----------
+// ---------- parsing / inference ----------
 function splitLines(text){
   return String(text ?? "")
     .split(/\r?\n/)
@@ -176,11 +254,17 @@ function inferIsbnColumn(header, rows){
     }
   }
 
-  let best = -1, bestCount = 0;
+  let best = -1;
+  let bestCount = 0;
   for(let c=0;c<cols;c++){
-    if(counts[c] > bestCount){ bestCount = counts[c]; best = c; }
+    if(counts[c] > bestCount){
+      bestCount = counts[c];
+      best = c;
+    }
   }
-  return bestCount < 3 ? -1 : best;
+
+  if(bestCount < 3) return -1;
+  return best;
 }
 
 function formatPubdateMin(raw){
@@ -206,10 +290,12 @@ function formatPubdateMin(raw){
 
 function inferPubdateColumn(header, rows){
   const h = header.map(x => normStr(x));
+  // ヘッダにありがちな語を優先
   const keys = ["発売日","発行日","配本日","刊行日","発売","発行","刊行"];
   let idx = h.findIndex(x => keys.some(k => x.includes(k)));
   if(idx !== -1) return idx;
 
+  // データから日付っぽい値が多い列を採用
   const sample = rows.slice(0, 200);
   if(sample.length === 0) return -1;
 
@@ -218,15 +304,22 @@ function inferPubdateColumn(header, rows){
 
   for(const r of sample){
     for(let c=0;c<cols;c++){
-      if(formatPubdateMin(r[c])) counts[c] += 1;
+      const v = formatPubdateMin(r[c]);
+      if(v) counts[c] += 1;
     }
   }
 
-  let best = -1, bestCount = 0;
+  let best = -1;
+  let bestCount = 0;
   for(let c=0;c<cols;c++){
-    if(counts[c] > bestCount){ bestCount = counts[c]; best = c; }
+    if(counts[c] > bestCount){
+      bestCount = counts[c];
+      best = c;
+    }
   }
-  return bestCount < 3 ? -1 : best;
+
+  if(bestCount < 3) return -1;
+  return best;
 }
 
 function extractIsbnsAndPubdateFromTrcText(text, labels){
@@ -260,11 +353,13 @@ function extractIsbnsAndPubdateFromTrcText(text, labels){
 
     isbns.push(isbn);
 
+    // 発売日（推定列が取れたらそこ、取れないなら行から拾う）
     let pd = null;
     if(pubCol !== -1){
       pd = formatPubdateMin(r[pubCol]);
     }
     if(!pd){
+      // 行内に日付っぽいものがあれば拾う（保険）
       const m8 = joined.match(/\b(\d{8})\b/);
       if(m8) pd = formatPubdateMin(m8[1]);
       if(!pd){
@@ -272,7 +367,9 @@ function extractIsbnsAndPubdateFromTrcText(text, labels){
         if(mYmd) pd = formatPubdateMin(mYmd[0]);
       }
     }
-    if(pd && !pubdateByIsbn.has(isbn)) pubdateByIsbn.set(isbn, pd);
+    if(pd && !pubdateByIsbn.has(isbn)){
+      pubdateByIsbn.set(isbn, pd);
+    }
   }
 
   return { isbns: uniq(isbns), pubdateByIsbn, pubCol };
@@ -282,6 +379,7 @@ function extractIsbnsAndPubdateFromTrcText(text, labels){
 function pickCover(entry){
   const s = entry?.summary || {};
   if(s.cover) return s.cover;
+
   if(entry?.hanmoto?.cover) return entry.hanmoto.cover;
 
   const link =
@@ -304,7 +402,8 @@ function pickTitle(entry){
 
 function pickPubdateFromOpenbd(entry){
   const s = entry?.summary || {};
-  return formatPubdateMin(s.pubdate ?? "");
+  const raw = s.pubdate ?? "";
+  return formatPubdateMin(raw);
 }
 
 function pick(entry, fallbackIsbn, trcPubdate){
@@ -349,10 +448,16 @@ async function fillMissingCovers(items){
     if(!/^97[89]\d{10}$/.test(isbn13)) continue;
 
     const ndl = await probeImage(NDL_THUMB(isbn13));
-    if(ndl){ it.cover = ndl; continue; }
+    if(ndl){
+      it.cover = ndl;
+      continue;
+    }
 
     const ol = await probeImage(OL_THUMB(isbn13));
-    if(ol){ it.cover = ol; continue; }
+    if(ol){
+      it.cover = ol;
+      continue;
+    }
   }
   return items;
 }
@@ -378,8 +483,8 @@ async function loadExistingItems(){
 }
 
 function mergeRocketPencil(newItems, oldItems, limit = 8){
+  // 既存の情報で補完（新しい方が欠けてる時だけ）
   const oldByIsbn = new Map(oldItems.map(x => [normIsbn(x.isbn), x]));
-
   const patchedNew = newItems.map(it => {
     const k = normIsbn(it?.isbn);
     const old = oldByIsbn.get(k);
@@ -404,21 +509,6 @@ function mergeRocketPencil(newItems, oldItems, limit = 8){
   return merged;
 }
 
-// ---------- Aログ補助 ----------
-function isbnsOf(items){
-  return (items || []).map(x => normIsbn(x?.isbn)).filter(Boolean);
-}
-function head(arr, n=8){ return (arr||[]).slice(0,n); }
-function countNewIsbns(todayItems, existingItems){
-  const ex = new Set(isbnsOf(existingItems));
-  let c = 0;
-  for(const it of (todayItems || [])){
-    const k = normIsbn(it?.isbn);
-    if(k && !ex.has(k)) c++;
-  }
-  return c;
-}
-
 // ---------- main ----------
 async function main(){
   await fs.mkdir("data", { recursive: true });
@@ -426,9 +516,9 @@ async function main(){
   const labels = await loadWhitelistLabels();
 
   const zipUrl = await findLatestTrcZipUrl();
-  const tmpZip = "data/_trc_latest.zip";
-
   console.log("TRC ZIP URL:", zipUrl);
+
+  const tmpZip = "data/_trc_latest.zip";
 
   await fetchBinToFile(zipUrl, tmpZip);
   const trcText = await unzipPickTextFile(tmpZip);
@@ -436,11 +526,13 @@ async function main(){
   const { isbns: isbnsAll, pubdateByIsbn, pubCol } = extractIsbnsAndPubdateFromTrcText(trcText, labels);
   const isbns = isbnsAll.slice(0, TAKE_ISBNS);
 
+  // ---- A+ ログ（状況が一目で分かるやつ）----
   console.log("WHITELIST labels:", labels.length);
   console.log("TRC label-matched unique isbns:", isbnsAll.length);
   console.log("TRC pubdateByIsbn size:", pubdateByIsbn.size);
   console.log("TRC inferred pubCol:", pubCol);
-  console.log("TRC isbn head:", head(isbnsAll, 10).join(", "));
+  console.log("TRC isbn head:", isbnsAll.slice(0, 10).join(", "));
+  // --------------------------------------------
 
   if(isbns.length === 0){
     if(!(await exists(BOOKS_PATH))){
@@ -463,6 +555,7 @@ async function main(){
     if(b) itemsTodayAll.push(b);
   }
 
+  // 今日の候補を最大8に絞ってから書影補完（通信量節約）
   const itemsToday = await fillMissingCovers(itemsTodayAll.slice(0, 8));
 
   if(itemsToday.length === 0){
@@ -470,13 +563,21 @@ async function main(){
     return;
   }
 
+  // ロケットえんぴつ：既存と結合して最大8枠維持
   const existing = await loadExistingItems();
   const merged = mergeRocketPencil(itemsToday, existing, 8);
 
-  console.log("EXISTING ISBNs:", head(isbnsOf(existing), 8).join(", "));
-  console.log("TODAY    ISBNs:", head(isbnsOf(itemsToday), 8).join(", "));
-  console.log("MERGED   ISBNs:", head(isbnsOf(merged), 8).join(", "));
-  console.log("newTodayCount (today not in existing):", countNewIsbns(itemsToday, existing));
+  // ---- A+ ログ（ロケット挙動確認）----
+  const existingIsbns = existing.map(x => x.isbn);
+  const todayIsbns = itemsToday.map(x => x.isbn);
+  const mergedIsbns = merged.map(x => x.isbn);
+
+  const newToday = todayIsbns.filter(x => !existingIsbns.includes(x));
+  console.log("EXISTING ISBNs:", existingIsbns.join(", "));
+  console.log("TODAY    ISBNs:", todayIsbns.join(", "));
+  console.log("MERGED   ISBNs:", mergedIsbns.join(", "));
+  console.log("newTodayCount (today not in existing):", newToday.length);
+  // -----------------------------------
 
   const out = {
     generated_at: new Date().toISOString(),
